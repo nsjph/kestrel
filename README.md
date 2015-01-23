@@ -1,4 +1,4 @@
-![A picture of a Kestrel](http://i.imgur.com/r6iIFxd.jpg)
+![A picture of a Kestrel](https://i.imgur.com/r6iIFxd.jpg)
 
 Kestrel
 =======
