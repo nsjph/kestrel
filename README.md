@@ -1,49 +1,48 @@
 Kestrel
 =======
 
-An experimental cjdns router implementation.
+Another cjdns router implementation.
 
 ## Background
 
 Cjdns is the name of a [meshnet routing protocol](https://github.com/cjdelisle/cjdns/blob/master/doc/Whitepaper.md) and [router implementation](https://github.com/cjdelisle/cjdns) from [cjd](https://github.com/cjdelisle).
 
-As of November 2014, the main developer (cjd) stepped down without leaving a successor. For users of the software, this leaves the following options:
+Kestrel is an attempt at a new, simpler cjdns router in Golang.
 
-1. Stop using cjdns
-2. Use cjdns until it no longer works
-3. Maintain the reference cjdns router implementation
-4. Develop a new cjdns router
-
-kestrel is my attempt at option #4. I believe if we build simpler cjdns router implementations, we will be better able to debug, enhance and grow cjdns networks (like Hyperboria) in the future.
+Why a new router? Because I think simpler routers will make it easier to debug, troubleshoot and develop cjdns.
 
 ## Known Issues/Limitations
 
 1. I'm writing Kestrel in Golang. I have no experience with Golang prior to this project
 2. Cjdns is an encrypted network protocol. I haven't implemented encrypted network protocols  
-2. kestrel is being written for Linux. Little effort will be made to make kestrel portable to non-x86 architectures, or operating systems other than Linux. If you need multiplatform support, stick with cjdroute. If you would like to help make kestrel work on other platforms, please get in contact.
+2. Kestrel is being written first for Linux/x64. If you need multiplatform support, stick with cjdroute. If you would like to help make Kestrel work on other platforms, please get in contact.
 
 ## FAQ
 
 **Q: Is this a fork of cjdns?**
 
-*A: No. This is my attempt to write an interoperable cjdns router in golang.*
+*A: No. This is an attempt at an interoperable cjdns router in golang.*
 
-**Q: What is the status of kestrel?** 
+**Q: What is the status of Kestrel?** 
 
-*A: kestrel is not ready for testing or production use*
+*A: Kestrel is not ready for testing or production use as of Q1 2015*
 
 **Q: Why not work on cjdroute instead?**
 
-*A: I felt like learning Golang rather than adopting someone else's codebase*
+*A: 1) I felt like learning Golang, and 2) writing Kestrel is a great way to learn how the cjdns protocol works by implementing it from the ground up.*
+
+**Q: Why not insert other language here?**
+
+*A: Golang felt like the sweet spot for porting a C-based network daemon (there's many success stories of companies porting network services to Golang). The combination of static-typing, garbage collection and C-like syntax makes code more readable and significantly harder to screw up than C.*
+
+**Q: What's with the name Kestrel? Will you change the name again?**
+
+*A: I like birds. Pray I do not change the name further.*
+
+**Q: Why did you move this repo from github.com/jphackworth to github.com/nsjph? Is it the same dev?**
+
+*A: Yes it's the same author. I changed it because jphackworth is too long, and nsjph matches my twitter.*
 
 ## For Developers
 
-If you want to test/hack on it in its current state:
-
-1. Install/setup Go: https://golang.org/doc/install
-2. go get github.com/jphackworth/kestrel
-3. go build github.com/jphackworth/kestrel
-4. go install github.com/jphackworth/kestrel
-5. $GOPATH/bin/kestrel
-
-NOTE: There's not much to see at the moment.
+There's not much to see at the moment.
