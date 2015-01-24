@@ -8,6 +8,7 @@ import (
 	_ "encoding/gob"
 	_ "github.com/BurntSushi/toml"
 	"github.com/jphackworth/kestrel/tun"
+	"github.com/op/go-logging"
 	"net"
 	"sync"
 	"time"
@@ -126,6 +127,7 @@ type Router struct {
 	UDPListener *net.UDPConn
 	Config      *ServerConfig
 	BufSz       int
+	Log         *logging.Logger
 }
 
 type PeerName string

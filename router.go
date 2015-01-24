@@ -24,12 +24,13 @@ import (
 	_ "encoding/binary"
 	_ "fmt"
 	"github.com/jphackworth/kestrel/tun"
+	"github.com/op/go-logging"
 	_ "github.com/vishvananda/netlink"
 	_ "io"
 	"log"
 	_ "log"
 	"net"
-	_ "os"
+	"os"
 	"syscall"
 	_ "time"
 )
@@ -80,7 +81,11 @@ import (
 
 func newRouter(c *TomlConfig) *Router {
 
-	router := &Router{Config: &c.Server, BufSz: 1500}
+	router := &Router{Config: &c.Server,
+		BufSz: 1500,
+		Log:   initLogger("kestrel", logging.DEBUG, os.Stderr)}
+
+	//router.Log.SetBackend(&router.LogBackend)
 
 	//router.UDPListener = listenUDP(c.Server.Listen)
 
@@ -89,13 +94,16 @@ func newRouter(c *TomlConfig) *Router {
 
 func (router *Router) Start() {
 
+	router.Log.Debug("starting")
 	router.Iface = router.startTunDevice(router.Config.IPv6)
 	router.UDPListener = router.listenUDP(router.Config.Listen)
 }
 
 func (router *Router) startTunDevice(ipv6addr string) *tun.Tun {
 
-	log.Printf("starting tun device")
+	router.Log.Debug("starting tun device")
+
+	//log.Printf("starting tun device")
 
 	tunDevice := tun.New()
 	tunDevice.Open()
@@ -106,6 +114,9 @@ func (router *Router) startTunDevice(ipv6addr string) *tun.Tun {
 }
 
 func (router *Router) listenUDP(listenAddress string) *net.UDPConn {
+
+	router.Log.Debug("starting udp listener on %s", listenAddress)
+
 	localAddr, err := net.ResolveUDPAddr("udp4", listenAddress)
 
 	checkFatal(err)
@@ -118,6 +129,9 @@ func (router *Router) listenUDP(listenAddress string) *net.UDPConn {
 	// This one makes sure all packets we send out do not have DF set on them.
 	err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_MTU_DISCOVER, syscall.IP_PMTUDISC_DONT)
 	checkFatal(err)
+
+	router.Log.Debug("udp listener going into read loop")
+
 	go router.udpReader(conn)
 	return conn
 }
@@ -126,6 +140,9 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 	buf := make([]byte, 4096)
 
 	for {
+
+		//router.Log.Debug("reading from UDP")
+
 		numRead, _, err := conn.ReadFromUDP(buf)
 		//conn.ReadFrom
 		checkFatal(err)
