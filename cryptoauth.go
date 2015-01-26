@@ -97,11 +97,12 @@ func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) ([]byte, []
 	return encryptedMsg, msg
 }
 
-func (router *Router) getSharedSecret(peer *Peer) {
+func (peer *Peer) getSharedSecret() {
 	if peer.password == nil {
 		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(peer.publicKey[:])[:52])
-		box.Precompute(&peer.sharedSecret, &peer.publicKey, &router.PrivateKey)
+		box.Precompute(&peer.sharedSecret, &peer.publicKey, &peer.routerKeyPair.privateKey)
 	} else {
+		log.Printf("PASSWORD IS NOT NIL")
 
 		var computedKey [32]byte
 		curve25519.ScalarMult(&computedKey, &peer.routerKeyPair.privateKey, &peer.publicKey)
@@ -124,8 +125,6 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 	h := &CryptoAuth_Handshake{}
 
 	h.Stage = peer.nextNonce + 1
-	//n, err := rand.Read(h.Challenge) // TODO: does this fill the entirety?
-	//log.Println("random bytes read into h.Challenge:", n)
 	h.Challenge.Type = 0
 	z := make([]byte, 7)
 	rand.Read(z)
@@ -133,10 +132,15 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 	//rand.Read(h.Challenge.Lookup)
 	h.Challenge.RequirePacketAuthAndDerivationCount = 1
 	h.Challenge.Additional = 1
-	h.PublicKey = router.PublicKey
+	h.PublicKey = peer.routerKeyPair.publicKey
 	n, err := rand.Read(h.Nonce[:])
 	checkFatal(err)
 	log.Println("random bytes read into h.Nonce", n)
+
+	if peer.password != nil {
+		passwordHash := hashPassword(peer.password, 1)
+		router.Log.Debug("passwordHash = [%x]", passwordHash)
+	}
 
 	if peer.nextNonce == 0 || peer.nextNonce == 2 {
 		// Generate temp keypair
@@ -147,7 +151,7 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 
 	if peer.nextNonce < 2 {
 		// Generate shared secret
-		router.getSharedSecret(peer)
+		peer.getSharedSecret()
 	} else {
 		// see cryptoauth.c ~534
 
@@ -164,7 +168,10 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 	err = binary.Write(buf, binary.BigEndian, h.Nonce)
 	err = binary.Write(buf, binary.BigEndian, h.PublicKey)
 
-	router.Log.Debug("sending message with:\n\tnonce: %x\n\tsecret: %x\n\t", h.Nonce, peer.sharedSecret)
+	router.Log.Debug("sending message with:\n\tnonce: %x\n\tsecret: %x\n\tourPubkey: %x\n\therPubkey: %x\n",
+		h.Nonce, peer.sharedSecret, peer.routerKeyPair.publicKey, peer.publicKey)
+
+	//spew.Dump(buf.Bytes())
 
 	//log.Printf("cryptoauth len: %d", len(buf.Bytes()))
 	y := make([]byte, 72)
@@ -173,18 +180,6 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 
 	encryptedMsg, authenticator := encryptRandomNonce(h.Nonce, y, peer.sharedSecret)
 	copy(h.Authenticator[:], authenticator)
-	//log.Println(len(encryptedMsg))
-	//h.Payload = encryptedMsg
-
-	//ehm := &EncryptedHandshakeMessage{Handshake: h, EncryptedPayload: encryptedMsg}
-
-	// This is where we need to construct the final message packet with cryptoauth + appended msg payload?
-
-	//err = binary.Write(buf, binary.BigEndian, encryptedMsg)
-
-	//router.Peers[peer.name] = peer
-
-	// debug using gopacket
 
 	p := gopacket.NewPacket(buf.Bytes(), LayerTypeHandshake, gopacket.Lazy)
 
@@ -218,7 +213,7 @@ func hashPassword_256(password []byte) []byte {
 	//return h.Sum(h.Sum([]byte(password))[:32])[:12]
 
 	log.Printf("original %s, hashed %x", password, pw_hash2[:12])
-	return pw_hash2[:12]
+	return pw_hash2[:32]
 }
 
 func hashPassword(password []byte, authType int) []byte {

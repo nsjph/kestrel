@@ -151,7 +151,7 @@ type Peer struct {
 	sharedSecret  [32]byte
 	publicKey     [32]byte
 	log           *logging.Logger
-	passwordHash  []byte
+	passwordHash  [32]byte
 }
 
 type Message struct {

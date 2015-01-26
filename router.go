@@ -18,6 +18,7 @@ package main
 
 import (
 	"code.google.com/p/gopacket"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"github.com/nsjph/tun"
@@ -124,6 +125,7 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 			if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
 				// router.Log.Debug("This is a handshake packet!")
 				h, _ = handshakeLayer.(*Handshake)
+				//log.Println(p.Dump())
 				// router.Log.Debug("handshake stage: %d", h.Stage)
 				//router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
 
@@ -189,8 +191,13 @@ func (router *Router) newPeer(publicKey [32]byte) *Peer {
 
 	// if we have their password, we'll use password auth to connect
 	if []byte(router.Config.Password) != nil {
+		//c := sha256.New()
+
 		peer.password = []byte(router.Config.Password)
-		peer.passwordHash = hashPassword(peer.password, 1)
+		h1 := sha256.Sum256(peer.password)
+		h2 := sha256.Sum256(h1[:32])
+		router.Log.Debug("HASHBABY %x", hex.EncodeToString(h2[:]))
+		peer.passwordHash = h1
 		peer.tempKeyPair = createTempKeyPair()
 	} else { // we'll use poly1305 and need temporary keys
 		peer.tempKeyPair = createTempKeyPair()
