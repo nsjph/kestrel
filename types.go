@@ -1,34 +1,12 @@
 package main
 
 import (
-	_ "bytes"
-	_ "code.google.com/p/go-bit/bit"
 	"code.google.com/p/gopacket"
 	"code.google.com/p/gopacket/layers"
-	_ "encoding/gob"
-	_ "github.com/BurntSushi/toml"
-	"github.com/jphackworth/kestrel/tun"
+	"github.com/nsjph/tun"
 	"github.com/op/go-logging"
 	"net"
-	"sync"
 	"time"
-)
-
-const (
-	CryptoAuth_addUser_INVALID_AUTHTYPE = -1
-	CryptoAuth_addUser_OUT_OF_SPACE     = -2
-	CryptoAuth_addUser_DUPLICATE        = -3
-	CryptoAuth_addUser_INVALID_IP       = -4
-	CryptoAuth_NEW                      = 0
-	CryptoAuth_HANDSHAKE1               = 1
-	CryptoAuth_ConnectToMePacket        = 1
-	CryptoAuth_HANDSHAKE2               = 2
-	CryptoAuth_HelloPacket              = 2
-	CryptoAuth_HANDSHAKE3               = 3
-	CryptoAuth_KeyPacket                = 3
-	CryptoAuth_ESTABLISHED              = 4
-	CryptoAuth_AuthenticatedPacket      = 4
-	CryptoAuth_STATE_COUNT              = 5
 )
 
 type ServerInfo struct {
@@ -123,11 +101,46 @@ type UDPServer struct {
 }
 
 type Router struct {
-	Iface       *tun.Tun
-	UDPListener *net.UDPConn
-	Config      *ServerConfig
-	BufSz       int
-	Log         *logging.Logger
+	Iface      *tun.Tun
+	PublicKey  [32]byte
+	PrivateKey [32]byte
+	UDPConn    *net.UDPConn
+	Config     *ServerConfig
+	BufSz      int
+	Log        *logging.Logger // go-logging
+	Peers      map[string]*Peer
+}
+
+// TODO: Keep this?
+type PublicKey [32]uint8
+
+type KeyPair struct {
+	publicKey  [32]byte
+	privateKey [32]byte
+}
+
+type Peer struct {
+	addr           *net.UDPAddr
+	name           string
+	publicKey      [32]byte
+	tempPublicKey  [32]byte
+	tempPrivateKey [32]byte
+	sharedKey      [32]byte
+	password       []byte // static password for incoming / outgoing peers..?
+	state          uint32 // handshake state or nonce
+	nextNonce      uint32
+}
+
+type Message struct {
+	length   uint32
+	padding  uint32
+	payload  []byte
+	capacity uint32
+}
+
+type EncryptedMessage2 struct {
+	handshake [120]byte
+	payload   []byte
 }
 
 type PeerName string
@@ -157,15 +170,15 @@ type ForwardedFrame struct {
 	frame   []byte
 }
 
-type Peer struct {
-	sync.RWMutex
-	Name          PeerName
-	NameByte      []byte
-	UID           uint64
-	version       uint64
-	localRefCount uint64
-	connections   map[PeerName]Connection
-}
+// type Peer struct {
+// 	sync.RWMutex
+// 	Name          PeerName
+// 	NameByte      []byte
+// 	UID           uint64
+// 	version       uint64
+// 	localRefCount uint64
+// 	connections   map[PeerName]Connection
+// }
 
 type RemoteConnection struct {
 	local         *Peer

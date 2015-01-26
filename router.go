@@ -17,77 +17,31 @@
 package main
 
 import (
-	_ "bytes"
-	_ "code.google.com/p/gopacket"
-	_ "code.google.com/p/gopacket/layers"
-	_ "code.google.com/p/gopacket/pcap"
-	_ "encoding/binary"
-	_ "fmt"
-	"github.com/jphackworth/kestrel/tun"
+	"code.google.com/p/gopacket"
+	"encoding/binary"
+	"encoding/hex"
+	"github.com/nsjph/tun"
 	"github.com/op/go-logging"
-	_ "github.com/vishvananda/netlink"
-	_ "io"
-	"log"
-	_ "log"
 	"net"
 	"os"
 	"syscall"
-	_ "time"
 )
-
-// From cjdns/interface/UDPInterface_pvt.h
-// const (
-// 	UDP_PACKET_BUFSIZE = 512
-// 	UDP_PACKET_MAXSIZE = 8192
-// 	MSG_MAXSIZE        = UDP_PACKET_BUFSIZE + UDP_PACKET_MAXSIZE
-// 	IFACE_BUFSIZE      = 2000
-// )
-
-// type Server struct {
-// 	localConn *net.UDPConn
-// 	peers     []Peer
-// }
-
-//https://stackoverflow.com/questions/21968266/handling-read-write-udp-connection-in-go
-//http://golang.org/src/net/dnsclient_unix.go
-// http://www.darkcoding.net/uncategorized/raw-sockets-in-go-ip-layer/
-
-// func startUDPServer(listenAddress string) *net.UDPConn {
-
-// 	addr, err := net.ResolveUDPAddr("udp4", listenAddress)
-// 	check(err)
-
-// 	conn, err := net.ListenUDP("udp4", addr)
-// 	check(err)
-
-// 	return conn
-// }
-
-// func startUDPServer(listenAddress string) *UDPServer {
-
-// 	addr, err := net.ResolveUDPAddr("udp4", listenAddress)
-// 	check(err)
-
-// 	conn, err := net.ListenUDP("udp4", addr)
-// 	check(err)
-
-// 	return &UDPServer{conn}
-// }
-
-// type Router struct {
-// 	Iface       *tun.Tun
-// 	UDPListener *net.UDPConn
-// }
 
 func newRouter(c *TomlConfig) *Router {
 
 	router := &Router{Config: &c.Server,
 		BufSz: 1500,
-		Log:   initLogger("kestrel", logging.DEBUG, os.Stderr)}
+		Log:   initLogger("kestrel", logging.DEBUG, os.Stderr),
+		Peers: make(map[string]*Peer)}
 
-	//router.Log.SetBackend(&router.LogBackend)
+	router.Log.Debug(router.Config.PublicKey[:50])
 
-	//router.UDPListener = listenUDP(c.Server.Listen)
+	pubkey, err := base32Decode([]byte(router.Config.PublicKey[:52]))
+	checkFatal(err)
+	copy(router.PublicKey[:], pubkey[:32])
+
+	_, err = hex.Decode(router.PrivateKey[:], []byte(router.Config.PrivateKey))
+	checkFatal(err)
 
 	return router
 }
@@ -96,14 +50,12 @@ func (router *Router) Start() {
 
 	router.Log.Debug("starting")
 	router.Iface = router.startTunDevice(router.Config.IPv6)
-	router.UDPListener = router.listenUDP(router.Config.Listen)
+	router.UDPConn = router.listenUDP(router.Config.Listen)
 }
 
 func (router *Router) startTunDevice(ipv6addr string) *tun.Tun {
 
 	router.Log.Debug("starting tun device")
-
-	//log.Printf("starting tun device")
 
 	tunDevice := tun.New()
 	tunDevice.Open()
@@ -137,31 +89,73 @@ func (router *Router) listenUDP(listenAddress string) *net.UDPConn {
 }
 func (router *Router) udpReader(conn *net.UDPConn) {
 	defer conn.Close()
-	buf := make([]byte, 4096)
+	payload := make([]byte, 4096) // TODO: optimize
+	oob := make([]byte, 4096)     // TODO: optimize
 
 	for {
 
-		//router.Log.Debug("reading from UDP")
-
-		numRead, _, err := conn.ReadFromUDP(buf)
-		//conn.ReadFrom
+		n, oobn, _, addr, err := conn.ReadMsgUDP(payload, oob)
+		router.Log.Debug("payload[%d], oob[%d]", n, oobn)
 		checkFatal(err)
 
-		tca := NewCryptoAuth(buf[:numRead])
-		//log.Printf("Nonce: %d, Handshake stage: %d, Challenge type: %d\n",
-		//	tca.Nonce, tca.Handshake.Stage, tca.Handshake.Challenge.Type)
-		//log.Println(tca)
-		//log.Printf("PublicKey: %s.k", base32Encode(tca.Handshake.PublicKey[:])[:52])
-		//log.Println(tca.Handshake.Challenge.String())
-		//tca.Handshake.Challenge.Dump()
-		log.Println(tca.Nonce)
-		tca.Handshake.Dump()
-		//PrintChallenge()
+		// Create or update peer map entry
+		peerName := addr.String()
+		router.Log.Debug("remote peer addr is %s\n", peerName)
+		peer, present := router.Peers[peerName]
+		if present == false {
+			router.Log.Debug("new remote peer")
+			peer = &Peer{addr: addr, name: peerName, password: nil}
+			router.Peers[peerName] = peer
+		} else {
+			router.Log.Debug("peer already known")
+		}
+
+		// Check if it is a handshake or data packet
+		nonce := binary.BigEndian.Uint32(payload[:4])
+
+		if nonce <= 4 {
+
+			p := gopacket.NewPacket(payload[:n], LayerTypeHandshake, gopacket.Lazy)
+			router.Log.Debug("inbound packet: %s", p.String())
+
+			var h *Handshake
+
+			if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
+				// router.Log.Debug("This is a handshake packet!")
+				h, _ = handshakeLayer.(*Handshake)
+				// router.Log.Debug("handshake stage: %d", h.Stage)
+				router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
+			}
+
+			switch nonce {
+			case 0:
+				peer.nextNonce = 0
+				router.Log.Debug("received connect to me packet")
+			case 1:
+				router.Log.Debug("remote peer sent a hello message, is waiting for reply")
+
+				//router.Log.Debug("")
+
+				peer.nextNonce = 1
+				peer.publicKey = h.PublicKey
+				//msg := testMessage()
+				msg := testMessage2()
+				//msg := newMessage(0, 512)
+				router.sendMessage(msg, peer)
+
+				// TODO: When/where is the best place to update the peer map entry?
+				router.Peers[peerName] = peer
+			case 2:
+				router.Log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
+			case 3:
+				router.Log.Debug("Sent a hello message and received a key message but have not gotten a data message yet")
+			case 4:
+				router.Log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
+			}
+		}
+
+		// Before we finish, update the peer map entry
+		router.Peers[peerName] = peer
+
 	}
-}
-
-//func (router *Router) sendMessage()
-
-func (router *Router) handleUDPPacketFunc(po PacketSink) {
-
 }

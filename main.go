@@ -16,7 +16,6 @@ package main
 
 import (
 	"github.com/adampresley/sigint"
-	"log"
 	"os"
 	"time"
 )
@@ -42,44 +41,29 @@ func run(configFile string) {
 	sleepInterval := 60
 
 	config := readConfigFile(configFile)
-	log.Printf("Starting\n")
 
 	//startUDPServer(config.Server.Listen, &server)
 	//initTunDevice(config, &server)
 
 	//server = startServer(config)
 	router := newRouter(&config)
+
+	router.Log.Debug("Starting\n")
+
 	router.Start()
 
 	for {
-		log.Printf("Sleeping for %d seconds\n", sleepInterval)
+		router.Log.Debug("Main thread sleeping for %d seconds\n", sleepInterval)
+		//router.Log.Debug("Sleeping for %d seconds\n", sleepInterval)
 		time.Sleep(time.Duration(sleepInterval) * time.Second)
 	}
 }
-
-// func shutdown() {
-// 	log.Printf("Shutting down\n")
-// 	// log.Printf("Closing UDP connection... ")
-// 	// //server.Tun.file
-// 	// err := server.Conn.Close()
-// 	// if err != nil {
-// 	// 	log.Printf("Error closing UDP connection: %s\n", err)
-// 	// 	os.Exit(1)
-// 	// }
-
-// 	// log.Printf("Closing %s", server.Tun.Name)
-// 	// if err != nil {
-// 	// 	log.Printf("Error closing %s: %s", server.Tun.Name, err)
-// 	// }
-// 	log.Printf("See you next time!\n")
-// 	os.Exit(0)
-// }
 
 //ctrl-c interrupt code from http://adampresley.com/2014/12/15/handling-ctrl-c-in-go-command-line-applications.html
 func main() {
 
 	sigint.ListenForSIGINT(func() {
-		log.Printf("Received SIGINT.\n")
+		//router.Log.Debug("Received SIGINT.\n")
 		server.Shutdown()
 	})
 

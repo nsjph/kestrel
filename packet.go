@@ -4,9 +4,7 @@ package main
 
 import (
 	"code.google.com/p/gopacket"
-	_ "code.google.com/p/gopacket/layers"
 	"code.google.com/p/gopacket/pcap"
-	_ "log"
 )
 
 // Used to create a packet capture source for tun device

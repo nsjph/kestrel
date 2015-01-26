@@ -15,7 +15,7 @@
 package main
 
 import (
-	tun "github.com/jphackworth/kestrel/tun"
+	tun "github.com/nsjph/tun"
 	"log"
 )
 

@@ -17,9 +17,46 @@ package main
 import (
 	"crypto/rand"
 	"crypto/sha512"
+	"encoding/hex"
+	"fmt"
 	"golang.org/x/crypto/curve25519"
 	"net"
 )
+
+func createTempKeyPair() (publicKey [32]byte, privateKey [32]byte) {
+	rand.Read(privateKey[:32])
+	curve25519.ScalarBaseMult(&publicKey, &privateKey)
+	return publicKey, privateKey
+}
+
+func privateKeyStringToPublicKey(privateKeyString string) [32]byte {
+	d, _ := hex.DecodeString(privateKeyString)
+	var privateKey [32]byte
+	//privateKey = make([32]byte, 32)
+	copy(privateKey[:32], d[:32])
+	return createPublicKey(privateKey)
+}
+
+func publicKeyToBase32(key [32]uint8) string {
+	return fmt.Sprintf("%s.k", base32Encode(key[:])[:52])
+}
+
+func keyToHex(key [32]byte) string {
+	return hex.EncodeToString(key[:])
+}
+
+// For confirming that your converting between bits to hex and base32 correctly
+func publicKeyStringToHex(keystring string) string {
+	// decode from base32
+	decoded, err := base32Decode([]byte(keystring))
+	check(err)
+	//fmt.Printf("decoded: %x\n", decoded)
+
+	// encode to hex
+	hexencoded := hex.EncodeToString(decoded)
+	//fmt.Printf("hexencoded: %s\n", hexencoded)
+	return hexencoded
+}
 
 func createPrivateKey() [32]byte {
 	var key [32]byte
