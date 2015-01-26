@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	_ "encoding/hex"
 	"fmt"
+	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 	"log"
 	_ "math"
@@ -101,7 +102,21 @@ func (router *Router) getSharedSecret(peer *Peer) {
 		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(peer.publicKey[:])[:52])
 		box.Precompute(&peer.sharedSecret, &peer.publicKey, &router.PrivateKey)
 	} else {
-		panic("write this part of getSharedSecret")
+
+		var computedKey [32]byte
+		curve25519.ScalarMult(&computedKey, &peer.routerKeyPair.privateKey, &peer.publicKey)
+
+		buff := make([]byte, 64)
+		copy(buff[:32], computedKey[:])
+		copy(buff[32:64], peer.passwordHash[:])
+
+		peer.sharedSecret = sha256.Sum256(buff)
+
+		//:= make([]byte, 32)
+
+		// compute crypto_scalarmult_curve25519 - shared key is buff[:32], passwordhash is buff[32:64],
+		// and then buff is sha256 hashed
+		//panic("write this part of getSharedSecret")
 	}
 }
 
@@ -194,23 +209,26 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 // see cryptoauth.c ~ 579
 // TODO: func encryptMessage
 
-func (c *CryptoAuth_Challenge) hashPassword_256(password string) []byte {
+func hashPassword_256(password []byte) []byte {
 	//var tempBuff [32]uint8
 	//x := sha512.Sum512(publicKey[:])
 	//h := sha256.New()
-	pw_hash1 := sha256.Sum256([]byte(password))
+	pw_hash1 := sha256.Sum256(password)
 	pw_hash2 := sha256.Sum256(pw_hash1[:32])
 	//return h.Sum(h.Sum([]byte(password))[:32])[:12]
+
+	log.Printf("original %s, hashed %x", password, pw_hash2[:12])
 	return pw_hash2[:12]
 }
 
-func (c *CryptoAuth_Challenge) hashPassword(password string, authType int) {
+func hashPassword(password []byte, authType int) []byte {
 	switch authType {
 	case 1:
-		c.hashPassword_256(password)
+		return hashPassword_256(password)
 	default:
 		log.Println("Error: hashPassword() Unsupported authType")
 	}
+	return nil
 }
 
 // Sending packets

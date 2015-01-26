@@ -125,20 +125,22 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 				// router.Log.Debug("This is a handshake packet!")
 				h, _ = handshakeLayer.(*Handshake)
 				// router.Log.Debug("handshake stage: %d", h.Stage)
-				router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
+				//router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
 
 				peer, present := router.Peers[h.PublicKey]
 				if present == false {
-					peer = router.newPeer(h.PublicKey, nil)
+					peer = router.newPeer(h.PublicKey)
 					peer.addr = addr
 					peer.name = addr.String()
 					//router.Log.Debug("new remote peer")
 					//peer = &Peer{addr: addr, name: peerName, password: nil}
 					//router.Peers[peerName] = peer
-					router.Log.Debug("new peer name: %s", router.Peers[h.PublicKey].name)
+					//router.Log.Debug("new peer name: %s", router.Peers[h.PublicKey].name)
 				} else {
-					router.Log.Debug("peer already known")
+					//router.Log.Debug("peer already known")
 				}
+
+				peer.dumpKeys()
 
 				switch nonce {
 				case 0:
@@ -175,7 +177,7 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 	}
 }
 
-func (router *Router) newPeer(publicKey [32]byte, password []byte) *Peer {
+func (router *Router) newPeer(publicKey [32]byte) *Peer {
 
 	router.Log.Debug("creating new peer")
 	peer := new(Peer)
@@ -183,10 +185,13 @@ func (router *Router) newPeer(publicKey [32]byte, password []byte) *Peer {
 	peer.publicKey = publicKey
 	peer.routerKeyPair = router.keyPair
 	peer.conn = router.UDPConn
+	peer.log = router.Log
 
 	// if we have their password, we'll use password auth to connect
-	if password != nil {
-		peer.password = password
+	if []byte(router.Config.Password) != nil {
+		peer.password = []byte(router.Config.Password)
+		peer.passwordHash = hashPassword(peer.password, 1)
+		peer.tempKeyPair = createTempKeyPair()
 	} else { // we'll use poly1305 and need temporary keys
 		peer.tempKeyPair = createTempKeyPair()
 	}

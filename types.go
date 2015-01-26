@@ -94,6 +94,7 @@ type ServerConfig struct {
 	PublicKey  string `toml:"public_key"`
 	PrivateKey string `toml:"private_key"`
 	IPv6       string `toml:"ipv6"`
+	Password   string `toml:"password"`
 }
 
 type UDPServer struct {
@@ -111,6 +112,13 @@ type Router struct {
 	Peers3     map[string]*Peer
 	Peers      map[[32]byte]*Peer
 	keyPair    *KeyPair
+}
+
+type Passwd struct {
+	user      [32]byte    // username string, max 32 bytes
+	password  [32]byte    // hashed form of password loaded from kestrel.toml
+	publicKey []byte      // future use - allow only a given public key to use this password
+	addr      *net.IPAddr // future use - allow on a given remote ip addr to use this password
 }
 
 // TODO: Keep this?
@@ -142,6 +150,8 @@ type Peer struct {
 	routerKeyPair *KeyPair
 	sharedSecret  [32]byte
 	publicKey     [32]byte
+	log           *logging.Logger
+	passwordHash  []byte
 }
 
 type Message struct {
