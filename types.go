@@ -108,7 +108,9 @@ type Router struct {
 	Config     *ServerConfig
 	BufSz      int
 	Log        *logging.Logger // go-logging
-	Peers      map[string]*Peer
+	Peers3     map[string]*Peer
+	Peers      map[[32]byte]*Peer
+	keyPair    *KeyPair
 }
 
 // TODO: Keep this?
@@ -119,16 +121,27 @@ type KeyPair struct {
 	privateKey [32]byte
 }
 
+// type PeerKeys struct {
+// 	publicKey    [32]byte
+// 	sharedSecret [32]byte
+// 	password     []byte
+// 	tempKeyPair  *KeyPair
+// }
+
 type Peer struct {
-	addr           *net.UDPAddr
-	name           string
-	publicKey      [32]byte
-	tempPublicKey  [32]byte
-	tempPrivateKey [32]byte
-	sharedKey      [32]byte
-	password       []byte // static password for incoming / outgoing peers..?
-	state          uint32 // handshake state or nonce
-	nextNonce      uint32
+	addr *net.UDPAddr
+	conn *net.UDPConn
+	name string // ip:port
+	//tempPublicKey  [32]byte
+	//tempPrivateKey [32]byte
+	//sharedKey      [32]byte
+	password      []byte // static password for incoming / outgoing peers..?
+	state         uint32 // handshake state or nonce
+	nextNonce     uint32
+	tempKeyPair   *KeyPair
+	routerKeyPair *KeyPair
+	sharedSecret  [32]byte
+	publicKey     [32]byte
 }
 
 type Message struct {

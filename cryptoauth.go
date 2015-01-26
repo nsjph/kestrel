@@ -99,7 +99,7 @@ func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) ([]byte, []
 func (router *Router) getSharedSecret(peer *Peer) {
 	if peer.password == nil {
 		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(peer.publicKey[:])[:52])
-		box.Precompute(&peer.sharedKey, &peer.publicKey, &router.PrivateKey)
+		box.Precompute(&peer.sharedSecret, &peer.publicKey, &router.PrivateKey)
 	} else {
 		panic("write this part of getSharedSecret")
 	}
@@ -125,8 +125,9 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 
 	if peer.nextNonce == 0 || peer.nextNonce == 2 {
 		// Generate temp keypair
-		peer.tempPublicKey, peer.tempPrivateKey = createTempKeyPair()
-		h.TempPublicKey = peer.tempPublicKey
+		peer.tempKeyPair = createTempKeyPair()
+		//peer.tempPublicKey, peer.tempPrivateKey = createTempKeyPair()
+		h.TempPublicKey = peer.tempKeyPair.publicKey
 	}
 
 	if peer.nextNonce < 2 {
@@ -148,14 +149,14 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 	err = binary.Write(buf, binary.BigEndian, h.Nonce)
 	err = binary.Write(buf, binary.BigEndian, h.PublicKey)
 
-	router.Log.Debug("sending message with:\n\tnonce: %x\n\tsecret: %x\n\t", h.Nonce, peer.sharedKey)
+	router.Log.Debug("sending message with:\n\tnonce: %x\n\tsecret: %x\n\t", h.Nonce, peer.sharedSecret)
 
 	//log.Printf("cryptoauth len: %d", len(buf.Bytes()))
 	y := make([]byte, 72)
 	copy(y[:len(buf.Bytes())], buf.Bytes())
 	//log.Printf("msg before: %x", y)
 
-	encryptedMsg, authenticator := encryptRandomNonce(h.Nonce, y, peer.sharedKey)
+	encryptedMsg, authenticator := encryptRandomNonce(h.Nonce, y, peer.sharedSecret)
 	copy(h.Authenticator[:], authenticator)
 	//log.Println(len(encryptedMsg))
 	//h.Payload = encryptedMsg
@@ -166,7 +167,7 @@ func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
 
 	//err = binary.Write(buf, binary.BigEndian, encryptedMsg)
 
-	router.Peers[peer.name] = peer
+	//router.Peers[peer.name] = peer
 
 	// debug using gopacket
 

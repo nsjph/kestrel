@@ -23,10 +23,16 @@ import (
 	"net"
 )
 
-func createTempKeyPair() (publicKey [32]byte, privateKey [32]byte) {
-	rand.Read(privateKey[:32])
-	curve25519.ScalarBaseMult(&publicKey, &privateKey)
-	return publicKey, privateKey
+func createTempKeyPair() *KeyPair {
+
+	keyPair := new(KeyPair)
+
+	rand.Read(keyPair.privateKey[:32])
+
+	//rand.Read(privateKey[:32])
+	curve25519.ScalarBaseMult(&keyPair.publicKey, &keyPair.privateKey)
+	//return publicKey, privateKey
+	return keyPair
 }
 
 func privateKeyStringToPublicKey(privateKeyString string) [32]byte {

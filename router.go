@@ -29,18 +29,27 @@ import (
 
 func newRouter(c *TomlConfig) *Router {
 
-	router := &Router{Config: &c.Server,
-		BufSz: 1500,
-		Log:   initLogger("kestrel", logging.DEBUG, os.Stderr),
-		Peers: make(map[string]*Peer)}
+	router := new(Router)
 
-	router.Log.Debug(router.Config.PublicKey[:50])
+	router.Config = &c.Server
+	router.BufSz = 1500
+	router.Log = initLogger("kestrel", logging.DEBUG, os.Stderr)
+	router.keyPair = new(KeyPair)
+	router.Peers = make(map[[32]byte]*Peer)
+
+	// router := &Router{Config: &c.Server,
+	// 	BufSz: 1500,
+	// 	Log:   initLogger("kestrel", logging.DEBUG, os.Stderr)}
+
+	//router.
+
+	//router.Log.Debug(router.Config.PublicKey[:50])
 
 	pubkey, err := base32Decode([]byte(router.Config.PublicKey[:52]))
 	checkFatal(err)
-	copy(router.PublicKey[:], pubkey[:32])
+	copy(router.keyPair.publicKey[:], pubkey[:32])
 
-	_, err = hex.Decode(router.PrivateKey[:], []byte(router.Config.PrivateKey))
+	_, err = hex.Decode(router.keyPair.privateKey[:], []byte(router.Config.PrivateKey))
 	checkFatal(err)
 
 	return router
@@ -101,14 +110,6 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 		// Create or update peer map entry
 		peerName := addr.String()
 		router.Log.Debug("remote peer addr is %s\n", peerName)
-		peer, present := router.Peers[peerName]
-		if present == false {
-			router.Log.Debug("new remote peer")
-			peer = &Peer{addr: addr, name: peerName, password: nil}
-			router.Peers[peerName] = peer
-		} else {
-			router.Log.Debug("peer already known")
-		}
 
 		// Check if it is a handshake or data packet
 		nonce := binary.BigEndian.Uint32(payload[:4])
@@ -125,37 +126,71 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 				h, _ = handshakeLayer.(*Handshake)
 				// router.Log.Debug("handshake stage: %d", h.Stage)
 				router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
+
+				peer, present := router.Peers[h.PublicKey]
+				if present == false {
+					peer = router.newPeer(h.PublicKey, nil)
+					peer.addr = addr
+					peer.name = addr.String()
+					//router.Log.Debug("new remote peer")
+					//peer = &Peer{addr: addr, name: peerName, password: nil}
+					//router.Peers[peerName] = peer
+					router.Log.Debug("new peer name: %s", router.Peers[h.PublicKey].name)
+				} else {
+					router.Log.Debug("peer already known")
+				}
+
+				switch nonce {
+				case 0:
+					peer.nextNonce = 0
+					router.Log.Debug("received connect to me packet")
+				case 1:
+					router.Log.Debug("remote peer sent a hello message, is waiting for reply")
+
+					//router.Log.Debug("")
+
+					peer.nextNonce = 1
+					peer.publicKey = h.PublicKey
+					//msg := testMessage()
+					msg := testMessage2()
+					//msg := newMessage(0, 512)
+					router.sendMessage(msg, peer)
+
+					// TODO: When/where is the best place to update the peer map entry?
+					//router.Peers[peerName] = peer
+				case 2:
+					router.Log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
+				case 3:
+					router.Log.Debug("Sent a hello message and received a key message but have not gotten a data message yet")
+				case 4:
+					router.Log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
+				}
 			}
 
-			switch nonce {
-			case 0:
-				peer.nextNonce = 0
-				router.Log.Debug("received connect to me packet")
-			case 1:
-				router.Log.Debug("remote peer sent a hello message, is waiting for reply")
-
-				//router.Log.Debug("")
-
-				peer.nextNonce = 1
-				peer.publicKey = h.PublicKey
-				//msg := testMessage()
-				msg := testMessage2()
-				//msg := newMessage(0, 512)
-				router.sendMessage(msg, peer)
-
-				// TODO: When/where is the best place to update the peer map entry?
-				router.Peers[peerName] = peer
-			case 2:
-				router.Log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
-			case 3:
-				router.Log.Debug("Sent a hello message and received a key message but have not gotten a data message yet")
-			case 4:
-				router.Log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
-			}
 		}
 
 		// Before we finish, update the peer map entry
-		router.Peers[peerName] = peer
+		//router.Peers[peerName] = peer
 
 	}
+}
+
+func (router *Router) newPeer(publicKey [32]byte, password []byte) *Peer {
+
+	router.Log.Debug("creating new peer")
+	peer := new(Peer)
+
+	peer.publicKey = publicKey
+	peer.routerKeyPair = router.keyPair
+	peer.conn = router.UDPConn
+
+	// if we have their password, we'll use password auth to connect
+	if password != nil {
+		peer.password = password
+	} else { // we'll use poly1305 and need temporary keys
+		peer.tempKeyPair = createTempKeyPair()
+	}
+	router.Peers[publicKey] = peer
+
+	return peer
 }
