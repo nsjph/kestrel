@@ -36,12 +36,6 @@ type ServerConfig struct {
 }
 
 type UDPServer struct {
-	Conn *net.UDPConn
-}
-
-//type Server struct
-
-type UDPInterface struct {
 	conn    *net.UDPConn
 	keyPair *KeyPair
 	config  *ServerConfig
@@ -52,7 +46,7 @@ type UDPInterface struct {
 }
 
 type InterfaceController struct {
-	ifaces []*UDPInterface
+	ifaces []*UDPServer
 }
 
 type Router struct {
@@ -84,12 +78,10 @@ type KeyPair struct {
 }
 
 type Peer struct {
+	name string
 	addr *net.UDPAddr
 	conn *net.UDPConn
-	name string // ip:port
-	//tempPublicKey  [32]byte
-	//tempPrivateKey [32]byte
-	//sharedKey      [32]byte
+	//server        *UDPServer
 	password      []byte // static password for incoming / outgoing peers..?
 	state         uint32 // handshake state or nonce
 	nextNonce     uint32

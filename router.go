@@ -157,9 +157,9 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 					peer.nextNonce = 1
 					peer.publicKey = h.PublicKey
 					//msg := testMessage()
-					msg := testMessage2()
+					//msg := testMessage2()
 					//msg := newMessage(0, 512)
-					router.sendMessage(msg, peer)
+					//router.sendMessage(msg, peer)
 
 					// TODO: When/where is the best place to update the peer map entry?
 					//router.Peers[peerName] = peer

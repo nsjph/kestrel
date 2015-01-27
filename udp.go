@@ -16,9 +16,9 @@ package main
 
 import (
 	"code.google.com/p/gopacket"
-	"crypto/sha256"
+	_ "crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
+	_ "encoding/hex"
 	"github.com/op/go-logging"
 	"net"
 	"os"
@@ -26,30 +26,41 @@ import (
 )
 
 const (
-	UDPInterface_MAX_PACKET_SIZE = 8192
-	UDPInterface_PADDING         = 512
+	UDP_MAX_PACKET_SIZE = 8192
+
+	UDP_PADDING            = 512
+	UDP_MAX_PACKET_PAYLOAD = UDP_MAX_PACKET_SIZE - UDP_PADDING
 )
 
-func (c *ServerConfig) newUDPInterface() *UDPInterface {
+func (c *ServerConfig) newUDPServer() *UDPServer {
 
-	u := new(UDPInterface)
+	u := new(UDPServer)
 
-	u.bufsz = UDPInterface_MAX_PACKET_SIZE
+	u.bufsz = UDP_MAX_PACKET_SIZE
+	u.padsz = UDP_PADDING
 	u.config = c
 	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
-	u.keyPair = new(KeyPair)
+	u.keyPair = u.config.getServerKeyPair()
+
+	// pubkey, err := base32Decode([]byte(u.config.PublicKey[:52]))
+	// checkFatal(err)
+	// copy(u.keyPair.publicKey[:], pubkey[:32])
+
+	// _, err = hex.Decode(u.keyPair.privateKey[:], []byte(u.config.PrivateKey))
+	// checkFatal(err)
+
 	u.peers = make(map[string]*Peer)
 
 	return u
 }
 
-func (u *UDPInterface) start() {
+func (u *UDPServer) start() {
 
 	u.log.Debug("Starting UDP Interface on %s", u.config.Listen)
 	u.listen()
 }
 
-func (u *UDPInterface) listen() {
+func (u *UDPServer) listen() {
 
 	localAddr, err := net.ResolveUDPAddr("udp4", u.config.Listen)
 	checkFatal(err)
@@ -65,10 +76,10 @@ func (u *UDPInterface) listen() {
 	err = syscall.SetsockoptInt(fd, syscall.IPPROTO_IP, syscall.IP_MTU_DISCOVER, syscall.IP_PMTUDISC_DONT)
 	checkFatal(err)
 
-	u.log.Debug("UDPInterface.listen(): going into read loop")
+	u.log.Debug("UDPServer.listen(): going into read loop")
 	go u.readLoop()
 }
-func (u *UDPInterface) readLoop() {
+func (u *UDPServer) readLoop() {
 	defer u.conn.Close()
 	payload := make([]byte, u.bufsz) // TODO: optimize
 	oob := make([]byte, 4096)        // TODO: optimize
@@ -76,7 +87,7 @@ func (u *UDPInterface) readLoop() {
 	for {
 
 		n, oobn, _, addr, err := u.conn.ReadMsgUDP(payload, oob)
-		u.log.Debug("UDPInterface.readLoop(): payload[%d], oob[%d]", n, oobn)
+		u.log.Debug("UDPServer.readLoop(): payload[%d], oob[%d]", n, oobn)
 		checkFatal(err)
 
 		peer, present := u.peers[addr.String()]
@@ -88,11 +99,11 @@ func (u *UDPInterface) readLoop() {
 		stage := binary.BigEndian.Uint32(payload[:4])
 
 		if stage <= 4 {
-			u.log.Debug("UDPInterface.readLoop(): received handshake packet, stage (%d)", stage)
+			u.log.Debug("UDPServer.readLoop(): received handshake packet, stage (%d)", stage)
 
 			// decode packet for debugging
 			p := gopacket.NewPacket(payload[:n], LayerTypeHandshake, gopacket.Lazy)
-			u.log.Debug("inbound packet: %s", p.String())
+			//u.log.Debug("inbound packet: %s", p.String())
 
 			h := new(Handshake)
 
@@ -108,9 +119,14 @@ func (u *UDPInterface) readLoop() {
 					u.log.Debug("remote peer sent a hello message, is waiting for reply")
 
 					peer.nextNonce = 1
+
 					peer.publicKey = h.PublicKey
-					msg := testMessage2()
-					peer.sendMessage(msg)
+
+					peer.dumpKeys()
+
+					peer.sendHelloPacket(peer.newHelloPacket())
+					//msg := testMessage2()
+					//peer.sendMessage(msg)
 
 				case 2:
 					u.log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
@@ -124,9 +140,9 @@ func (u *UDPInterface) readLoop() {
 	}
 }
 
-func (u *UDPInterface) newPeer(addr *net.UDPAddr) *Peer {
+func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 
-	u.log.Debug("UDPInterface.newPeer(): creating new peer")
+	u.log.Debug("UDPServer.newPeer(): creating new peer")
 	peer := new(Peer)
 
 	peer.addr = addr
@@ -136,18 +152,23 @@ func (u *UDPInterface) newPeer(addr *net.UDPAddr) *Peer {
 	peer.log = u.log
 
 	// if we have their password, we'll use password auth to connect
-	if []byte(u.config.Password) != nil {
-		//c := sha256.New()
 
-		peer.password = []byte(u.config.Password)
-		h1 := sha256.Sum256(peer.password)
-		//h2 := sha256.Sum256(h1[:32])
-		u.log.Debug("HASHBABY %x", hex.EncodeToString(h1[:]))
-		peer.passwordHash = h1
-		peer.tempKeyPair = createTempKeyPair()
-	} else { // we'll use poly1305 and need temporary keys
-		peer.tempKeyPair = createTempKeyPair()
-	}
+	// XXXXtemporary disable
+
+	// if []byte(u.config.Password) != nil {
+	// 	peer.password = []byte(u.config.Password)
+	// } else {
+	// 	peer.password = nil
+	// }
+
+	// 	h1 := sha256.Sum256(peer.password)
+	// 	//h2 := sha256.Sum256(h1[:32])
+	// 	u.log.Debug("HASHBABY %x", hex.EncodeToString(h1[:]))
+	// 	peer.passwordHash = h1
+	// 	peer.tempKeyPair = createTempKeyPair()
+	// } else { // we'll use poly1305 and need temporary keys
+	// 	peer.tempKeyPair = createTempKeyPair()
+	// }
 	u.peers[peer.name] = peer
 
 	return peer
