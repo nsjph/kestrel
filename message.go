@@ -75,6 +75,19 @@ func newMessage(msg []byte) []byte {
 
 }
 
+func newMessage2(msg []byte) []byte {
+
+	if len(msg) > UDP_MAX_PACKET_SIZE {
+		panic("message too big, not enough room for payload plus padding")
+	}
+
+	m := make([]byte, len(msg))
+	copy(m[:], msg)
+
+	return m
+
+}
+
 func messageNew(msg []byte) *Message {
 	//buff := make([]byte, len(msg)+512)
 	out := new(Message)
