@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// router.go - formerly udp.go
-
 package main
 
 import (
@@ -53,8 +51,6 @@ func (u *UDPInterface) start() {
 
 func (u *UDPInterface) listen() {
 
-	//router.Log.Debug("starting udp listener on %s", listenAddress)
-
 	localAddr, err := net.ResolveUDPAddr("udp4", u.config.Listen)
 	checkFatal(err)
 
@@ -70,9 +66,7 @@ func (u *UDPInterface) listen() {
 	checkFatal(err)
 
 	u.log.Debug("UDPInterface.listen(): going into read loop")
-
 	go u.readLoop()
-
 }
 func (u *UDPInterface) readLoop() {
 	defer u.conn.Close()
@@ -106,8 +100,6 @@ func (u *UDPInterface) readLoop() {
 
 				h, _ = handshakeLayer.(*Handshake)
 
-				//peer.dumpKeys()
-
 				switch stage {
 				case 0:
 					peer.nextNonce = 0
@@ -115,17 +107,11 @@ func (u *UDPInterface) readLoop() {
 				case 1:
 					u.log.Debug("remote peer sent a hello message, is waiting for reply")
 
-					//router.Log.Debug("")
-
 					peer.nextNonce = 1
 					peer.publicKey = h.PublicKey
-					//msg := testMessage()
 					msg := testMessage2()
-					//msg := newMessage(0, 512)
 					peer.sendMessage(msg)
 
-					// TODO: When/where is the best place to update the peer map entry?
-					//router.Peers[peerName] = peer
 				case 2:
 					u.log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
 				case 3:
@@ -134,12 +120,7 @@ func (u *UDPInterface) readLoop() {
 					u.log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
 				}
 			}
-
 		}
-
-		// Before we finish, update the peer map entry
-		//router.Peers[peerName] = peer
-
 	}
 }
 
