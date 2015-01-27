@@ -101,6 +101,27 @@ type UDPServer struct {
 	Conn *net.UDPConn
 }
 
+//type Server struct
+
+type UDPInterface struct {
+	conn    *net.UDPConn
+	keyPair *KeyPair
+	config  *ServerConfig
+	bufsz   int
+	padsz   int
+	log     *logging.Logger // go-logging
+	peers   map[[32]byte]*Peer
+}
+
+type InterfaceController struct {
+	ifaces []*UDPInterface
+}
+
+// type Interface interface {
+// 	Read(b []byte) (n int, err error)
+// 	Start(ic *InterfaceController, c ServerConfig)
+// }
+
 type Router struct {
 	Iface      *tun.Tun
 	PublicKey  [32]byte
@@ -152,6 +173,7 @@ type Peer struct {
 	publicKey     [32]byte
 	log           *logging.Logger
 	passwordHash  [32]byte
+	initiator     bool
 }
 
 type Message struct {

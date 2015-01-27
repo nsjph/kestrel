@@ -318,3 +318,66 @@ func (h *Handshake) NextLayerType() gopacket.LayerType {
 func (h *Handshake) Payload() []byte {
 	return nil
 }
+
+// Hello Packet experimentation
+
+type HelloPacket struct {
+	Stage         uint32
+	Challenge     *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
+	Nonce         [24]byte              // 24 bytes
+	PublicKey     [32]byte
+	Authenticator [16]byte // 16 bytes
+	TempPublicKey [32]byte // 32 bytes
+}
+
+// type CryptoAuth_Challenge struct {
+// 	Type                                uint8
+// 	Lookup                              [7]byte
+// 	RequirePacketAuthAndDerivationCount uint16
+// 	Additional                          uint16
+// }
+
+func (peer *Peer) newHelloPacket() []byte {
+	h := new(HelloPacket)
+
+	h.Stage = peer.nextNonce
+	h.Challenge.Type = 1
+	h.PublicKey = peer.publicKey
+	h.Challenge.RequirePacketAuthAndDerivationCount |= 1 << 15
+
+	nonce := make([]byte, 24)
+	rand.Read(nonce)
+	copy(h.Nonce[:], nonce)
+
+	// if hello or key packet, generate tempkey and assign to temppubkey
+	if peer.nextNonce == 0 || peer.nextNonce == 2 {
+		h.TempPublicKey = peer.tempKeyPair.publicKey
+	}
+
+	if peer.nextNonce < 2 {
+		// get shared secret
+		peer.getSharedSecret()
+		peer.initiator = true
+		peer.nextNonce = 1
+	}
+
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, h.Stage)
+	binary.Write(buf, binary.BigEndian, h.Challenge.Type)
+	binary.Write(buf, binary.BigEndian, h.Challenge.Lookup)
+	binary.Write(buf, binary.BigEndian, h.Challenge.RequirePacketAuthAndDerivationCount)
+	binary.Write(buf, binary.BigEndian, h.Challenge.Additional)
+	binary.Write(buf, binary.BigEndian, h.Nonce)
+	binary.Write(buf, binary.BigEndian, h.PublicKey)
+
+	return buf.Bytes()
+
+	//return h
+
+}
+
+func (peer *Peer) sendHelloPacket(packet []byte) {
+	n, err := peer.conn.WriteToUDP(packet, peer.addr)
+	checkFatal(err)
+	peer.log.Debug("wrote %d bytes to peer %s", n, peer.name)
+}

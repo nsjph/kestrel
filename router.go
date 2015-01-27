@@ -23,6 +23,7 @@ import (
 	"encoding/hex"
 	"github.com/nsjph/tun"
 	"github.com/op/go-logging"
+	"log"
 	"net"
 	"os"
 	"syscall"
@@ -125,7 +126,7 @@ func (router *Router) udpReader(conn *net.UDPConn) {
 			if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
 				// router.Log.Debug("This is a handshake packet!")
 				h, _ = handshakeLayer.(*Handshake)
-				//log.Println(p.Dump())
+				log.Println(p.Dump())
 				// router.Log.Debug("handshake stage: %d", h.Stage)
 				//router.Log.Debug("received handshake packet with nonce: %x", h.Nonce)
 
@@ -195,8 +196,8 @@ func (router *Router) newPeer(publicKey [32]byte) *Peer {
 
 		peer.password = []byte(router.Config.Password)
 		h1 := sha256.Sum256(peer.password)
-		h2 := sha256.Sum256(h1[:32])
-		router.Log.Debug("HASHBABY %x", hex.EncodeToString(h2[:]))
+		//h2 := sha256.Sum256(h1[:32])
+		router.Log.Debug("HASHBABY %x", hex.EncodeToString(h1[:]))
 		peer.passwordHash = h1
 		peer.tempKeyPair = createTempKeyPair()
 	} else { // we'll use poly1305 and need temporary keys
