@@ -110,7 +110,7 @@ type UDPInterface struct {
 	bufsz   int
 	padsz   int
 	log     *logging.Logger // go-logging
-	peers   map[[32]byte]*Peer
+	peers   map[string]*Peer
 }
 
 type InterfaceController struct {

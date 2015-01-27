@@ -40,7 +40,7 @@ func (c *ServerConfig) newUDPInterface() *UDPInterface {
 	u.config = c
 	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
 	u.keyPair = new(KeyPair)
-	u.peers = make(map[[32]byte]*Peer)
+	u.peers = make(map[string]*Peer)
 
 	return u
 }
@@ -85,6 +85,11 @@ func (u *UDPInterface) readLoop() {
 		u.log.Debug("UDPInterface.readLoop(): payload[%d], oob[%d]", n, oobn)
 		checkFatal(err)
 
+		peer, present := u.peers[addr.String()]
+		if present == false {
+			peer = u.newPeer(addr)
+		}
+
 		// Check if it is a handshake or data packet
 		stage := binary.BigEndian.Uint32(payload[:4])
 
@@ -100,14 +105,6 @@ func (u *UDPInterface) readLoop() {
 			if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
 
 				h, _ = handshakeLayer.(*Handshake)
-
-				peer, present := u.peers[h.PublicKey]
-				if present == false {
-					peer = u.newPeer(h.PublicKey)
-					peer.addr = addr
-					peer.name = addr.String()
-
-				}
 
 				//peer.dumpKeys()
 
@@ -146,12 +143,13 @@ func (u *UDPInterface) readLoop() {
 	}
 }
 
-func (u *UDPInterface) newPeer(publicKey [32]byte) *Peer {
+func (u *UDPInterface) newPeer(addr *net.UDPAddr) *Peer {
 
 	u.log.Debug("UDPInterface.newPeer(): creating new peer")
 	peer := new(Peer)
 
-	peer.publicKey = publicKey
+	peer.addr = addr
+	peer.name = addr.String()
 	peer.routerKeyPair = u.keyPair
 	peer.conn = u.conn
 	peer.log = u.log
@@ -169,7 +167,7 @@ func (u *UDPInterface) newPeer(publicKey [32]byte) *Peer {
 	} else { // we'll use poly1305 and need temporary keys
 		peer.tempKeyPair = createTempKeyPair()
 	}
-	u.peers[publicKey] = peer
+	u.peers[peer.name] = peer
 
 	return peer
 }
