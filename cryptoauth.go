@@ -90,3 +90,10 @@ func (router *Router) sendMessage(msg []byte, peer *Peer) {
 // GoPacket section below
 
 // TODO: remove this - it's a temporary copy for experimenting with gopacket decoding
+
+func (peer *Peer) receiveMessage(msg []byte) {
+	if len(msg) < 20 {
+		peer.log.Warning("receiveMessage(): packet too short, dropping")
+		return
+	}
+}

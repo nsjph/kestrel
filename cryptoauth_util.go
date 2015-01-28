@@ -197,19 +197,24 @@ func encryptRandomNonce2(nonce [24]byte, msg *Message, secret [32]byte) []byte {
 	return encryptedMsg
 }
 
-func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) []byte {
+func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte, x []byte) []byte {
 
 	//startAt := make([]byte, len(msg.payload))
 	//copy(startAt[:], msg.payload[512:])
 	//out := make([]byte, len(msg)+32)
 	//var out []byte
 
-	log.Printf("encryptRandomNonce(): orig msg = [%x]", msg)
+	log.Printf("encryptRandomNonce(): orig msg = [%x]", x)
 
-	encryptedMsg := box.SealAfterPrecomputation(msg, msg, &nonce, &secret)
+	//out := make([]byte, 16+len(msg))
+	//copy(out[16:], msg)
+
+	var out []byte
+
+	encryptedMsg := box.SealAfterPrecomputation(out, msg, &nonce, &secret)
 
 	log.Printf("encryptRandomNonce(): message = [%x]", msg)
-	log.Printf("encryptRandomNonce(): out = [%x]", msg)
+	log.Printf("encryptRandomNonce(): out = [%x]", out)
 	log.Printf("encryptRandomNonce(): encryptedmessage = [%x]", encryptedMsg)
 
 	return encryptedMsg
@@ -251,7 +256,9 @@ func (peer *Peer) newHelloPacket() []byte {
 	h.Stage = peer.nextNonce
 
 	peer.tempKeyPair = createTempKeyPair()
-	h.TempPublicKey = peer.tempKeyPair.publicKey
+	//h.TempPublicKey = peer.tempKeyPair.publicKey
+	peer.log.Debug("peer.tempPublicKey = [%x]", peer.tempKeyPair.publicKey)
+	//peer.log.Debug("head.tempPublicKey = [%x]", h.TempPublicKey)
 
 	// if hello or key packet, generate tempkey and assign to temppubkey
 	if peer.nextNonce == 0 || peer.nextNonce == 2 {
@@ -269,11 +276,6 @@ func (peer *Peer) newHelloPacket() []byte {
 		peer.nextNonce = 3
 	}
 
-	log.Printf("pre-newMessage: msg = [%x]", h.TempPublicKey)
-	m := newMessage2(h.TempPublicKey[:])
-	//n := messageNew([]byte("hi there"))
-	encryptedMsg := encryptRandomNonce(h.Nonce, m, peer.sharedSecret)
-
 	//binary.BigEndian.PutUint32
 
 	buf := new(bytes.Buffer)
@@ -283,13 +285,27 @@ func (peer *Peer) newHelloPacket() []byte {
 	binary.Write(buf, binary.BigEndian, h.Challenge.RequirePacketAuthAndDerivationCount)
 	binary.Write(buf, binary.BigEndian, h.Challenge.Additional)
 	binary.Write(buf, binary.BigEndian, h.Nonce)
-	binary.Write(buf, binary.LittleEndian, h.PublicKey)
+	binary.Write(buf, binary.BigEndian, h.PublicKey)
 	//binary.Write(buf, binary.BigEndian, h.Authenticator)
-	binary.Write(buf, binary.BigEndian, encryptedMsg)
+	//binary.Write(buf, binary.BigEndian, encryptedMsg)
 	//binary.Write(buf, binary.BigEndian, uint32(512))
 	//binary.Write(buf, binary.BigEndian, uint32(len(m)))
 
+	//log.Printf("pre-newMessage: msg = [%x]", h.TempPublicKey)
+	//m := newMessage2(h.)
+	//n := messageNew([]byte("hi there"))
+	//m := make([]byte, 32)
+	//copy(m, peer.tempKeyPair.publicKey[:])
+
+	peer.log.Debug("pre-encrypt header: %x", buf.Bytes())
+
+	encryptedMsg := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret, buf.Bytes())
+
+	peer.log.Debug("encryptedMsg length = [%d]", len(encryptedMsg))
+
 	peer.log.Debug("Encrypting message with:\n nonce: %x\n secret: %x\n cipher: %x\n", h.Nonce, peer.sharedSecret, encryptedMsg)
+
+	binary.Write(buf, binary.BigEndian, encryptedMsg)
 
 	return buf.Bytes()
 
