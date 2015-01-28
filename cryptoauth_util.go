@@ -11,14 +11,11 @@ import (
 )
 
 func hashPassword_256(password []byte) []byte {
-	//var tempBuff [32]uint8
-	//x := sha512.Sum512(publicKey[:])
-	//h := sha256.New()
+
 	pw_hash1 := sha256.Sum256(password)
 	pw_hash2 := sha256.Sum256(pw_hash1[:32])
-	//return h.Sum(h.Sum([]byte(password))[:32])[:12]
 
-	log.Printf("original %s, hashed %x", password, pw_hash2[:12])
+	//log.Printf("original %s, hashed %x", password, pw_hash2[:12])
 	return pw_hash2[:32]
 }
 
@@ -47,93 +44,7 @@ func (peer *Peer) getSharedSecret() {
 		copy(buff[32:64], peer.passwordHash[:])
 
 		peer.sharedSecret = sha256.Sum256(buff)
-
-		//:= make([]byte, 32)
-
-		// compute crypto_scalarmult_curve25519 - shared key is buff[:32], passwordhash is buff[32:64],
-		// and then buff is sha256 hashed
-		//panic("write this part of getSharedSecret")
 	}
-}
-
-func (router *Router) encryptHandshake(msg []byte, peer *Peer) []byte {
-	h := &CryptoAuth_Handshake{}
-
-	h.Stage = peer.nextNonce + 1
-	h.Challenge.Type = 0
-	z := make([]byte, 7)
-	rand.Read(z)
-	copy(h.Challenge.Lookup[:], z)
-	//rand.Read(h.Challenge.Lookup)
-	h.Challenge.RequirePacketAuthAndDerivationCount = 1
-	h.Challenge.Additional = 1
-	h.PublicKey = peer.routerKeyPair.publicKey
-	n, err := rand.Read(h.Nonce[:])
-	checkFatal(err)
-	log.Println("random bytes read into h.Nonce", n)
-
-	if peer.password != nil {
-		passwordHash := hashPassword(peer.password, 1)
-		router.Log.Debug("passwordHash = [%x]", passwordHash)
-	}
-
-	if peer.nextNonce == 0 || peer.nextNonce == 2 {
-		// Generate temp keypair
-		peer.tempKeyPair = createTempKeyPair()
-		//peer.tempPublicKey, peer.tempPrivateKey = createTempKeyPair()
-		h.TempPublicKey = peer.tempKeyPair.publicKey
-	}
-
-	if peer.nextNonce < 2 {
-		// Generate shared secret
-		peer.getSharedSecret()
-	} else {
-		// see cryptoauth.c ~534
-
-		panic("write this part of encryptHandshake")
-	}
-
-	// write out into bigendian once we have fully constructed the header
-	buf := new(bytes.Buffer)
-	err = binary.Write(buf, binary.BigEndian, h.Stage)
-	err = binary.Write(buf, binary.BigEndian, h.Challenge.Type)
-	err = binary.Write(buf, binary.BigEndian, h.Challenge.Lookup)
-	err = binary.Write(buf, binary.BigEndian, h.Challenge.RequirePacketAuthAndDerivationCount)
-	err = binary.Write(buf, binary.BigEndian, h.Challenge.Additional)
-	err = binary.Write(buf, binary.BigEndian, h.Nonce)
-	err = binary.Write(buf, binary.BigEndian, h.PublicKey)
-
-	router.Log.Debug("sending message with:\n\tnonce: %x\n\tsecret: %x\n\tourPubkey: %x\n\therPubkey: %x\n",
-		h.Nonce, peer.sharedSecret, peer.routerKeyPair.publicKey, peer.publicKey)
-
-	//spew.Dump(buf.Bytes())
-
-	//log.Printf("cryptoauth len: %d", len(buf.Bytes()))
-	y := make([]byte, 72)
-	copy(y[:len(buf.Bytes())], buf.Bytes())
-	//log.Printf("msg before: %x", y)
-
-	//encryptedMsg, authenticator := encryptRandomNonce(h.Nonce, y, peer.sharedSecret)
-	//copy(h.Authenticator[:], authenticator)
-
-	// p := gopacket.NewPacket(buf.Bytes(), LayerTypeHandshake, gopacket.Lazy)
-
-	// var h2 *Handshake
-
-	// if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
-	// 	router.Log.Debug("XXX This is a handshake packet!")
-	// 	h2, _ = handshakeLayer.(*Handshake)
-	// 	router.Log.Debug("handshake stage: %d", h2.Stage)
-
-	// 	//router.Log.Debug("outbound packet: %s", p.String())
-
-	// 	// for _, layer := range p.Layers() {
-	// 	//  log.Println("PACKET LAYER:", layer.LayerType)
-	// 	// }
-	// 	//router.Log.Debug(p.LayerDump(gopacket.ApplicationLayer))
-	// }
-
-	return nil
 }
 
 // Assume this is already host endian format
@@ -178,44 +89,20 @@ type HelloPacket struct {
 	TempPublicKey [32]byte // 32 bytes
 }
 
-// type CryptoAuth_Challenge struct {
-//  Type                                uint8
-//  Lookup                              [7]byte
-//  RequirePacketAuthAndDerivationCount uint16
-//  Additional                          uint16
-// }
+// encryptRandomNonce uses the nonce and shared secret to encrypt the
+// temp public key.
+//
+// encryptedMsg[:16] = authenticator / [16]byte
+// encryptedMsg[16:] = encryptedTempPublicKey / [32]byte
+//
+// TODO: Maybe encryptedMsg isn't the best name for the variable
 
-func encryptRandomNonce2(nonce [24]byte, msg *Message, secret [32]byte) []byte {
+func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) []byte {
 
-	startAt := make([]byte, len(msg.payload))
-	copy(startAt[:], msg.payload[512:])
-	encryptedMsg := box.SealAfterPrecomputation(startAt, startAt, &nonce, &secret)
-
-	log.Printf("encryptRandomNonce(): message = [%x]", startAt)
-	log.Printf("encryptRandomNonce(): encryptedmessage = [%x]", encryptedMsg)
-
-	return encryptedMsg
-}
-
-func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte, x []byte) []byte {
-
-	//startAt := make([]byte, len(msg.payload))
-	//copy(startAt[:], msg.payload[512:])
-	//out := make([]byte, len(msg)+32)
-	//var out []byte
-
-	log.Printf("encryptRandomNonce(): orig msg = [%x]", x)
-
-	//out := make([]byte, 16+len(msg))
-	//copy(out[16:], msg)
-
+	// TODO: confirm if this is necessary
 	var out []byte
 
 	encryptedMsg := box.SealAfterPrecomputation(out, msg, &nonce, &secret)
-
-	log.Printf("encryptRandomNonce(): message = [%x]", msg)
-	log.Printf("encryptRandomNonce(): out = [%x]", out)
-	log.Printf("encryptRandomNonce(): encryptedmessage = [%x]", encryptedMsg)
 
 	return encryptedMsg
 }
@@ -299,7 +186,7 @@ func (peer *Peer) newHelloPacket() []byte {
 
 	peer.log.Debug("pre-encrypt header: %x", buf.Bytes())
 
-	encryptedMsg := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret, buf.Bytes())
+	encryptedMsg := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret)
 
 	peer.log.Debug("encryptedMsg length = [%d]", len(encryptedMsg))
 

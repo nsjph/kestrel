@@ -67,30 +67,6 @@ type CryptoAuth_Challenge_Ints struct {
 	ints [3]uint32
 }
 
-// see cryptoauth.c ~245
-
-// we use the first 32 bytes of the message payload for the encrypted nonce
-
-// see cryptoauth.c ~ 579
-// TODO: func encryptMessage
-
-// Sending packets
-
-// it would be nice to just use peer interface (peer *Peer)sendMessage, but we need to juggle where various keys are,
-// so we use router interface instead
-// need a memory-efficient way of keeping the router private keys and udpconn in each peer
-func (router *Router) sendMessage(msg []byte, peer *Peer) {
-	if peer.nextNonce < 4 {
-		n, err := router.UDPConn.WriteToUDP(router.encryptHandshake(msg, peer), peer.addr)
-		checkFatal(err)
-		router.Log.Debug("wrote %d bytes to peer %s", n, peer.name)
-	}
-}
-
-// GoPacket section below
-
-// TODO: remove this - it's a temporary copy for experimenting with gopacket decoding
-
 func (peer *Peer) receiveMessage(msg []byte) {
 	if len(msg) < 20 {
 		peer.log.Warning("receiveMessage(): packet too short, dropping")
