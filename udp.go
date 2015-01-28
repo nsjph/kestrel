@@ -15,9 +15,9 @@
 package main
 
 import (
-	"code.google.com/p/gopacket"
+	_ "code.google.com/p/gopacket"
 	_ "crypto/sha256"
-	"encoding/binary"
+	_ "encoding/binary"
 	_ "encoding/hex"
 	"github.com/op/go-logging"
 	"net"
@@ -41,13 +41,6 @@ func (c *ServerConfig) newUDPServer() *UDPServer {
 	u.config = c
 	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
 	u.keyPair = u.config.getServerKeyPair()
-
-	// pubkey, err := base32Decode([]byte(u.config.PublicKey[:52]))
-	// checkFatal(err)
-	// copy(u.keyPair.publicKey[:], pubkey[:32])
-
-	// _, err = hex.Decode(u.keyPair.privateKey[:], []byte(u.config.PrivateKey))
-	// checkFatal(err)
 
 	u.peers = make(map[string]*Peer)
 
@@ -95,48 +88,50 @@ func (u *UDPServer) readLoop() {
 			peer = u.newPeer(addr)
 		}
 
+		peer.receiveMessage(payload)
+
 		// Check if it is a handshake or data packet
-		stage := binary.BigEndian.Uint32(payload[:4])
+		// stage := binary.BigEndian.Uint32(payload[:4])
 
-		if stage <= 4 {
-			u.log.Debug("UDPServer.readLoop(): received handshake packet, stage (%d)", stage)
+		// if stage <= 4 {
+		// 	u.log.Debug("UDPServer.readLoop(): received handshake packet, stage (%d)", stage)
 
-			// decode packet for debugging
-			p := gopacket.NewPacket(payload[:n], LayerTypeHandshake, gopacket.Lazy)
-			//u.log.Debug("inbound packet: %s", p.String())
+		// 	// decode packet for debugging
+		// 	p := gopacket.NewPacket(payload[:n], LayerTypeHandshake, gopacket.Lazy)
+		// 	//u.log.Debug("inbound packet: %s", p.String())
 
-			h := new(Handshake)
+		// 	h := new(Handshake)
 
-			if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
+		// 	if handshakeLayer := p.Layer(LayerTypeHandshake); handshakeLayer != nil {
 
-				h, _ = handshakeLayer.(*Handshake)
+		// 		h, _ = handshakeLayer.(*Handshake)
 
-				switch stage {
-				case 0:
-					peer.nextNonce = 0
-					u.log.Debug("received connect to me packet")
-				case 1:
-					u.log.Debug("remote peer sent a hello message, is waiting for reply")
+		// 		switch stage {
+		// 		case 0:
+		// 			peer.nextNonce = 0
+		// 			u.log.Debug("received connect to me packet")
+		// 		case 1:
+		// 			u.log.Debug("remote peer sent a hello message, is waiting for reply")
 
-					peer.nextNonce = 1
+		// 			peer.nextNonce = 1
 
-					peer.publicKey = h.PublicKey
+		// 			peer.publicKey = h.PublicKey
 
-					peer.dumpKeys()
+		// 			peer.dumpKeys()
 
-					peer.sendHelloPacket(peer.newHelloPacket())
-					//msg := testMessage2()
-					//peer.sendMessage(msg)
+		// 			peer.sendHandshake(peer.encryptHandshake())
+		// 			//msg := testMessage2()
+		// 			//peer.sendMessage(msg)
 
-				case 2:
-					u.log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
-				case 3:
-					u.log.Debug("Sent a hello message and received a key message but have not gotten a data message yet")
-				case 4:
-					u.log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
-				}
-			}
-		}
+		// 		case 2:
+		// 			u.log.Debug("remote peer received a hello message, sent a key message, is waiting for the session to complete")
+		// 		case 3:
+		// 			u.log.Debug("Sent a hello message and received a key message but have not gotten a data message yet")
+		// 		case 4:
+		// 			u.log.Debug("The CryptoAuth session has successfully done a handshake and received at least one message")
+		// 		}
+		// 	}
+		// }
 	}
 }
 
@@ -150,6 +145,7 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 	peer.routerKeyPair = u.keyPair
 	peer.conn = u.conn
 	peer.log = u.log
+	peer.established = false
 
 	// if we have their password, we'll use password auth to connect
 

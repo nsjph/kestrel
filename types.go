@@ -92,6 +92,7 @@ type Peer struct {
 	log           *logging.Logger
 	passwordHash  [32]byte
 	initiator     bool
+	established   bool
 }
 
 type Message struct {

@@ -2,7 +2,7 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
+	_ "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"golang.org/x/crypto/curve25519"
@@ -10,41 +10,70 @@ import (
 	"log"
 )
 
-func hashPassword_256(password []byte) []byte {
+const (
+	CryptoHeader_MAXLEN = 120
+)
+
+type CryptoAuth_Challenge struct {
+	Type                                uint8
+	Lookup                              [7]byte
+	RequirePacketAuthAndDerivationCount uint16
+	Additional                          uint16
+}
+
+type CryptoAuth_Handshake struct {
+	Stage         uint32
+	Challenge     *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
+	Nonce         [24]byte              // 24 bytes
+	PublicKey     [32]byte
+	Authenticator [16]byte // 16 bytes
+	TempPublicKey [32]byte // 32 bytes
+}
+
+func hashPassword_256(password []byte) (passwordHash [32]byte) {
 
 	pw_hash1 := sha256.Sum256(password)
 	pw_hash2 := sha256.Sum256(pw_hash1[:32])
 
+	copy(passwordHash[:], pw_hash2[:32])
+
+	return passwordHash
+
 	//log.Printf("original %s, hashed %x", password, pw_hash2[:12])
-	return pw_hash2[:32]
+	//return pw_hash2[:32]
 }
 
-func hashPassword(password []byte, authType int) []byte {
+func hashPassword(password []byte, authType int) (passwordHash [32]byte) {
 	switch authType {
 	case 1:
-		return hashPassword_256(password)
+		passwordHash = hashPassword_256(password)
+		//return hashPassword_256(password)
 	default:
 		log.Println("Error: hashPassword() Unsupported authType")
 	}
-	return nil
+	// TODO: review this...
+	return passwordHash
 }
 
-func (peer *Peer) getSharedSecret() {
-	if peer.password == nil {
-		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(peer.publicKey[:])[:52])
-		box.Precompute(&peer.sharedSecret, &peer.publicKey, &peer.routerKeyPair.privateKey)
-	} else {
-		log.Printf("PASSWORD IS NOT NIL")
+func getSharedSecret(privateKey [32]byte, herPublicKey [32]byte, passwordHash []byte) (sharedSecret [32]byte) {
 
-		var computedKey [32]byte
-		curve25519.ScalarMult(&computedKey, &peer.routerKeyPair.privateKey, &peer.publicKey)
+	// TODO: check this, is this right way to check for empty [32]byte?
+	if passwordHash == nil {
+		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(herPublicKey[:])[:52])
 
-		buff := make([]byte, 64)
-		copy(buff[:32], computedKey[:])
-		copy(buff[32:64], peer.passwordHash[:])
-
-		peer.sharedSecret = sha256.Sum256(buff)
+		box.Precompute(&sharedSecret, &herPublicKey, &privateKey)
+		return sharedSecret
 	}
+	var computedKey [32]byte
+	curve25519.ScalarMult(&computedKey, &privateKey, &herPublicKey)
+
+	buff := make([]byte, 64)
+	copy(buff[:32], computedKey[:])
+	copy(buff[32:64], passwordHash[:])
+
+	sharedSecret = sha256.Sum256(buff)
+
+	return sharedSecret
 }
 
 // Assume this is already host endian format
@@ -80,15 +109,6 @@ func (c *CryptoAuth_Challenge) isSetupPacket() uint16 {
 
 // Hello Packet experimentation
 
-type HelloPacket struct {
-	Stage         uint32
-	Challenge     *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
-	Nonce         [24]byte              // 24 bytes
-	PublicKey     [32]byte
-	Authenticator [16]byte // 16 bytes
-	TempPublicKey [32]byte // 32 bytes
-}
-
 // encryptRandomNonce uses the nonce and shared secret to encrypt the
 // temp public key.
 //
@@ -107,99 +127,40 @@ func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) []byte {
 	return encryptedMsg
 }
 
-func (peer *Peer) decryptHandshake(data []byte) {
-
-}
-
 func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) {
 
 }
 
-func (peer *Peer) newHelloPacket() []byte {
-	h := new(HelloPacket)
-	h.Challenge = new(CryptoAuth_Challenge)
+// this is horribly inefficient i think, because i'm a golang/binary noob --jph
 
-	// note, at this stage we're not garbaging the challenge 12 bytes
+func encrypt(nonce uint32, cleartextData []byte, sharedSecret [32]byte, initiator bool) []byte {
 
-	nonce := make([]byte, 24)
-	rand.Read(nonce)
-	copy(h.Nonce[:], nonce)
-
-	h.PublicKey = peer.routerKeyPair.publicKey
-	//peer.log.Debug("newHelloPacket(): setting our perm pubkey to [%s]", keyToHex(h.PublicKey))
-
-	if peer.password != nil {
-		copy(peer.passwordHash[:], hashPassword(peer.password, 1))
-		h.Challenge.Type = 1
-	} else {
-		h.Challenge.Type = 0
-	}
-
-	//h.Challenge.Type = 1
-
-	h.Challenge.setPacketAuthRequired(1)
-	h.Challenge.setSetupPacket(0)
-
-	h.Stage = peer.nextNonce
-
-	peer.tempKeyPair = createTempKeyPair()
-	//h.TempPublicKey = peer.tempKeyPair.publicKey
-	peer.log.Debug("peer.tempPublicKey = [%x]", peer.tempKeyPair.publicKey)
-	//peer.log.Debug("head.tempPublicKey = [%x]", h.TempPublicKey)
-
-	// if hello or key packet, generate tempkey and assign to temppubkey
-	if peer.nextNonce == 0 || peer.nextNonce == 2 {
-		peer.tempKeyPair = createTempKeyPair()
-		h.TempPublicKey = peer.tempKeyPair.publicKey
-	}
-
-	if peer.nextNonce < 2 {
-		// get shared secret
-		peer.getSharedSecret()
-		peer.initiator = true
-		peer.nextNonce = 1
-	} else {
-		peer.getSharedSecret()
-		peer.nextNonce = 3
-	}
-
-	//binary.BigEndian.PutUint32
-
+	var littleEndianNonce uint32
 	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, h.Stage)
-	binary.Write(buf, binary.BigEndian, h.Challenge.Type)
-	binary.Write(buf, binary.BigEndian, h.Challenge.Lookup)
-	binary.Write(buf, binary.BigEndian, h.Challenge.RequirePacketAuthAndDerivationCount)
-	binary.Write(buf, binary.BigEndian, h.Challenge.Additional)
-	binary.Write(buf, binary.BigEndian, h.Nonce)
-	binary.Write(buf, binary.BigEndian, h.PublicKey)
-	//binary.Write(buf, binary.BigEndian, h.Authenticator)
-	//binary.Write(buf, binary.BigEndian, encryptedMsg)
-	//binary.Write(buf, binary.BigEndian, uint32(512))
-	//binary.Write(buf, binary.BigEndian, uint32(len(m)))
+	binary.Write(buf, binary.BigEndian, nonce)
+	binary.Read(buf, binary.LittleEndian, littleEndianNonce)
 
-	//log.Printf("pre-newMessage: msg = [%x]", h.TempPublicKey)
-	//m := newMessage2(h.)
-	//n := messageNew([]byte("hi there"))
-	//m := make([]byte, 32)
-	//copy(m, peer.tempKeyPair.publicKey[:])
+	//littleEndianNonce := binary.LittleEndian.Uint32([]byte(nonce))
 
-	peer.log.Debug("pre-encrypt header: %x", buf.Bytes())
+	var n [2]int
+	//n[0] = 0
+	//n[1] = 0
 
-	encryptedMsg := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret)
+	var convertedNonce [24]byte
 
-	peer.log.Debug("encryptedMsg length = [%d]", len(encryptedMsg))
+	if initiator == true {
+		n[1] = littleEndianNonce
+	} else {
+		n[0] = littleEndianNonce
+	}
 
-	peer.log.Debug("Encrypting message with:\n nonce: %x\n secret: %x\n cipher: %x\n", h.Nonce, peer.sharedSecret, encryptedMsg)
+	//buf := new(bytes.Buffer)
+	binary.Write(buf, binary.BigEndian, n)
 
-	binary.Write(buf, binary.BigEndian, encryptedMsg)
-
-	return buf.Bytes()
+	return []byte(n)
 
 }
 
-func (peer *Peer) sendHelloPacket(packet []byte) {
-	n, err := peer.conn.WriteToUDP(packet, peer.addr)
-	checkFatal(err)
-	peer.log.Debug("wrote %d bytes to peer %s", n, peer.name)
+func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiator bool) []byte {
+	return nil
 }
