@@ -30,7 +30,7 @@ func run(configFile string) {
 	udpServer.start()
 
 	for {
-		udpServer.log.Debug("Main thread sleeping for %d seconds\n", sleepInterval)
+		//udpServer.log.Debug("Main thread sleeping for %d seconds\n", sleepInterval)
 		time.Sleep(time.Duration(sleepInterval) * time.Second)
 	}
 }

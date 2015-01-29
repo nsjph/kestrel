@@ -26,13 +26,13 @@ type CryptoAuth_Challenge struct {
 }
 
 type CryptoAuth_Handshake struct {
-	Stage                               uint32
-	Challenge                           *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
-	Nonce                               [24]byte              // 24 bytes
-	PublicKey                           [32]byte
-	AuthenticatorAndencryptedTempPubKey [48]byte
-	//Authenticator                       [16]byte // 16 bytes
-	//TempPublicKey                       [32]byte // 32 bytes
+	Stage     uint32
+	Challenge *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
+	Nonce     [24]byte              // 24 bytes
+	PublicKey [32]byte
+	//AuthenticatorAndencryptedTempPubKey []byte
+	Authenticator [16]byte // 16 bytes
+	TempPublicKey [32]byte // 32 bytes
 }
 
 func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
@@ -53,9 +53,9 @@ func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
 	binary.Read(r, binary.BigEndian, &h.Challenge.Additional)
 	binary.Read(r, binary.BigEndian, &h.Nonce)
 	binary.Read(r, binary.BigEndian, &h.PublicKey)
-	binary.Read(r, binary.BigEndian, &h.AuthenticatorAndencryptedTempPubKey)
-	//binary.Read(r, binary.BigEndian, &h.TempPublicKey)
-
+	binary.Read(r, binary.BigEndian, &h.Authenticator)
+	binary.Read(r, binary.BigEndian, &h.TempPublicKey)
+	//binary.Read(r, binary.BigEndian, &h.AuthenticatorAndencryptedTempPubKey)
 	return h, nil
 }
 
@@ -162,7 +162,10 @@ func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) ([]by
 
 	var out []byte
 
-	return box.OpenAfterPrecomputation(out, msg, &nonce, &sharedSecret)
+	decrypted, success := box.OpenAfterPrecomputation(out, msg, &nonce, &sharedSecret)
+	//spew.Dump(msg)
+
+	return decrypted, success
 }
 
 // this is horribly inefficient i think, because i'm a golang/binary noob --jph

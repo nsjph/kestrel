@@ -24,10 +24,10 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) (int, []byte
 		return -1, nil, errors.New("Error_UNDERSIZE_MESSAGE")
 	}
 
-	nonce := binary.LittleEndian.Uint32(msg[:4])
+	nonce := binary.BigEndian.Uint32(msg[:4])
 	peer.log.Debug("receiveMessage: nonce is [%v]", nonce)
 
-	if peer.established != true {
+	if peer.established == false {
 		if nonce > 3 && nonce != math.MaxUint32 {
 			if peer.nextNonce < 3 {
 				peer.log.Debug("receiveMessage: Dropping message to an unsetup connection")
@@ -127,6 +127,10 @@ func (peer *Peer) resetSession() {
 	peer.replayProtector = new(ReplayProtector)
 }
 
+// decryptHandshake is a significant part of cryptoauth, because of the
+// significant if-then-that conditions to ensure that the session is correctly
+// established at both ends. Here be dragons
+
 func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 
 	if len(data) < CryptoHeader_MAXLEN {
@@ -147,8 +151,8 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 	var challengeAsBytes [12]byte
 	copy(challengeAsBytes[:], data[4:16])
 
-	encryptedTempPubKey := make([]byte, 48) // authenticator = 16, key = 32
-	copy(encryptedTempPubKey, data[72:120])
+	encryptedTempPubKey := make([]byte, 200)
+	copy(encryptedTempPubKey, data[68:])
 
 	checkFatal(err)
 
@@ -223,13 +227,21 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 
 	}
 
-	peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.AuthenticatorAndencryptedTempPubKey)
+	//peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.AuthenticatorAndencryptedTempPubKey)
 
+	peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.TempPublicKey)
 	var herTempPublicKey [32]byte
-	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, []byte(handshake.AuthenticatorAndencryptedTempPubKey[:]), peer.sharedSecret)
 
+	peer.log.Debug("length of message: %d", len(data))
+
+	// TODOD REBOALKJFDASD
+	//	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, handshake.AuthenticatorAndencryptedTempPubKey, peer.sharedSecret)
+
+	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce,
+		handshake.TempPublicKey[:], peer.sharedSecret)
 	if success == false {
 		peer.log.Warning("decryptHandshake: Dropping message, decryption failed")
+		peer.established = false
 		return nil
 	} else {
 		// TODO: need an assert to validate that we only got 32 bytes back from decrypting the handshake
