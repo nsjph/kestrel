@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	_ "bytes"
 	_ "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -133,34 +133,49 @@ func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) {
 
 // this is horribly inefficient i think, because i'm a golang/binary noob --jph
 
-func encrypt(nonce uint32, cleartextData []byte, sharedSecret [32]byte, initiator bool) []byte {
+func encrypt(nonce uint32, cleartextData []byte, sharedSecret [32]byte, initiator bool) [24]byte {
 
-	var littleEndianNonce uint32
-	buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, nonce)
-	binary.Read(buf, binary.LittleEndian, littleEndianNonce)
+	//var littleEndianNonce uint32
 
 	//littleEndianNonce := binary.LittleEndian.Uint32([]byte(nonce))
 
-	var n [2]int
-	//n[0] = 0
-	//n[1] = 0
-
+	n := make([]byte, 8)
 	var convertedNonce [24]byte
 
 	if initiator == true {
-		n[1] = littleEndianNonce
+		binary.LittleEndian.PutUint32(n[4:], nonce)
 	} else {
-		n[0] = littleEndianNonce
+		binary.LittleEndian.PutUint32(n[:4], nonce)
+		//n[0] = littleEndianNonce
 	}
 
-	//buf := new(bytes.Buffer)
-	binary.Write(buf, binary.BigEndian, n)
+	copy(convertedNonce[:], n)
 
-	return []byte(n)
+	//buf := new(bytes.Buffer)
+	//binary.Write(buf, binary.BigEndian, n)
+
+	return convertedNonce
 
 }
 
-func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiator bool) []byte {
+func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiator bool) [24]byte {
+
+	n := make([]byte, 8)
+	var convertedNonce [24]byte
+
+	if initiator == false {
+		binary.LittleEndian.PutUint32(n[4:], nonce)
+	} else {
+		binary.LittleEndian.PutUint32(n[:4], nonce)
+		//n[0] = littleEndianNonce
+	}
+
+	copy(convertedNonce[:], n)
+
+	//buf := new(bytes.Buffer)
+	//binary.Write(buf, binary.BigEndian, n)
+
+	return convertedNonce
+
 	return nil
 }
