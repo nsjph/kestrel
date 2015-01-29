@@ -29,3 +29,10 @@ func checkFatal(e error) {
 		log.Fatal(e)
 	}
 }
+
+func isEmpty(x [32]byte) bool {
+	if x == [32]byte{} {
+		return true
+	}
+	return false
+}

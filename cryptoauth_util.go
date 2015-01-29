@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	_ "bytes"
 	_ "crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
+	"github.com/davecgh/go-spew/spew"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 	"log"
@@ -28,6 +31,30 @@ type CryptoAuth_Handshake struct {
 	PublicKey     [32]byte
 	Authenticator [16]byte // 16 bytes
 	TempPublicKey [32]byte // 32 bytes
+}
+
+func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
+	h := new(CryptoAuth_Handshake)
+	h.Challenge = new(CryptoAuth_Challenge)
+
+	// h.buffer = h.buffer[:0]
+
+	if len(data) < 120 {
+		return nil, fmt.Errorf("CryptoAuthHandshake header too short")
+	}
+
+	r := bytes.NewReader(data)
+	binary.Read(r, binary.BigEndian, &h.Stage)
+	binary.Read(r, binary.BigEndian, &h.Challenge.Type)
+	binary.Read(r, binary.BigEndian, &h.Challenge.Lookup)
+	binary.Read(r, binary.BigEndian, &h.Challenge.RequirePacketAuthAndDerivationCount)
+	binary.Read(r, binary.BigEndian, &h.Challenge.Additional)
+	binary.Read(r, binary.BigEndian, &h.Nonce)
+	binary.Read(r, binary.BigEndian, &h.PublicKey)
+	binary.Read(r, binary.BigEndian, &h.Authenticator)
+	binary.Read(r, binary.BigEndian, &h.TempPublicKey)
+
+	return h, nil
 }
 
 func hashPassword_256(password []byte) (passwordHash [32]byte) {
@@ -55,15 +82,17 @@ func hashPassword(password []byte, authType int) (passwordHash [32]byte) {
 	return passwordHash
 }
 
-func getSharedSecret(privateKey [32]byte, herPublicKey [32]byte, passwordHash []byte) (sharedSecret [32]byte) {
+func computeSharedSecret(privateKey [32]byte, herPublicKey [32]byte) (sharedSecret [32]byte) {
 
 	// TODO: check this, is this right way to check for empty [32]byte?
-	if passwordHash == nil {
-		log.Printf("getsharedsecret remote peer public key in b32: %s\n", base32Encode(herPublicKey[:])[:52])
+	box.Precompute(&sharedSecret, &herPublicKey, &privateKey)
+	return sharedSecret
+}
 
-		box.Precompute(&sharedSecret, &herPublicKey, &privateKey)
-		return sharedSecret
-	}
+func computeSharedSecretWithPasswordHash(privateKey [32]byte, herPublicKey [32]byte, passwordHash [32]byte) (sharedSecret [32]byte) {
+
+	// TODO: check this, is this right way to check for empty [32]byte?
+
 	var computedKey [32]byte
 	curve25519.ScalarMult(&computedKey, &privateKey, &herPublicKey)
 
@@ -133,7 +162,7 @@ func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) {
 
 // this is horribly inefficient i think, because i'm a golang/binary noob --jph
 
-func encrypt(nonce uint32, cleartextData []byte, sharedSecret [32]byte, initiator bool) [24]byte {
+func encrypt(nonce uint32, msg []byte, sharedSecret [32]byte, initiator bool) []byte {
 
 	//var littleEndianNonce uint32
 
@@ -154,7 +183,11 @@ func encrypt(nonce uint32, cleartextData []byte, sharedSecret [32]byte, initiato
 	//buf := new(bytes.Buffer)
 	//binary.Write(buf, binary.BigEndian, n)
 
-	return convertedNonce
+	spew.Printf("encrypt(): convertedNonce = %v", convertedNonce)
+
+	return encryptRandomNonce(convertedNonce, msg, sharedSecret)
+
+	//return convertedNonce
 
 }
 
@@ -175,7 +208,8 @@ func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiato
 	//buf := new(bytes.Buffer)
 	//binary.Write(buf, binary.BigEndian, n)
 
+	spew.Printf("decrypt(): convertedNonce = %v", convertedNonce)
+
 	return convertedNonce
 
-	return nil
 }

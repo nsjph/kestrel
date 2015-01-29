@@ -35,7 +35,7 @@ func (peer *Peer) receiveMessage(msg []byte) (int, []byte, error) {
 			}
 
 			peer.log.Debug("receiveMessage: Trying to complete handshake, nonce=%u", nonce)
-			sharedSecret := getSharedSecret(peer.tempKeyPair.privateKey, peer.publicKey, nil)
+			sharedSecret := computeSharedSecret(peer.tempKeyPair.privateKey, peer.publicKey)
 			peer.nextNonce += 3
 
 			// return code, body of decrypted message, error message
@@ -70,6 +70,41 @@ func (peer *Peer) receiveMessage(msg []byte) (int, []byte, error) {
 	return -1, nil, errors.New("Error_FELLTHRURECEIVMSG")
 }
 
+func (peer *Peer) sendMessage(msg []byte) {
+	// TODO: Check if there has been incoming traffic. If timeout reached, reset connection  to 0
+
+	if peer.nextNonce >= 0xfffffff0 {
+		// TODO: reset the nonce
+		panic("sendMessage: write the nonce resetting code")
+	}
+
+	if peer.nextNonce < 5 {
+		if peer.nextNonce < 4 {
+			n, err := peer.conn.WriteToUDP(peer.encryptHandshake(msg, 0), peer.addr)
+			checkFatal(err)
+			peer.log.Debug("Peer.sendMessage(): wrote %d bytes of encrypted handshake to peer %s", n, peer.name)
+			return
+		} else {
+			peer.log.Debug("sendMessage: final step to send handshake, nonce = 4")
+			peer.sharedSecret = computeSharedSecret(peer.tempKeyPair.privateKey, peer.publicKey)
+		}
+	}
+
+	n, err := peer.conn.WriteToUDP(peer.encryptMessage(msg), peer.addr)
+	checkFatal(err)
+	peer.log.Debug("sendMessage: wrote %d bytes of encrypted message to peer %s", n, peer.name)
+
+}
+
+func (peer *Peer) encryptMessage(msg []byte) []byte {
+
+	encryptedMsg := encrypt(peer.nextNonce, msg, peer.sharedSecret, peer.initiator)
+	peer.nextNonce++
+
+	return encryptedMsg
+
+}
+
 func (peer *Peer) decryptMessage(nonce uint32, encryptedPayload []byte, sharedSecret [32]byte) (int, []byte, error) {
 	panic("i dont know how to decrypt a message")
 	return 0, nil, nil
@@ -81,12 +116,47 @@ func (peer *Peer) sendHandshake(packet []byte) {
 	peer.log.Debug("wrote %d bytes to peer %s", n, peer.name)
 }
 
+func (peer *Peer) resetSession() {
+	peer.nextNonce = 0
+	peer.initiator = false
+	// TODO: verify that this is effective for resetting the pub/private keys
+	peer.tempKeyPair = new(KeyPair)
+	//peer.tempKeyPair.privateKey = [32]byte{}
+
+	// TODO: how do you zero a struct? Is this ok?
+	peer.replayProtector = new(ReplayProtector)
+}
+
 func (peer *Peer) decryptHandshake(nonce uint32, data []byte) []byte {
+
+	if len(data) < CryptoHeader_MAXLEN {
+		peer.log.Warning("decryptHandshake: short packet received from %s", peer.name)
+		// TODO: have calling function check for nil from decryptHandshake
+		return nil
+	}
+
+	handshake, err := decodeHandshake(data)
+	checkFatal(err)
+
+	if isEmpty(peer.publicKey) == false {
+		if peer.publicKey != handshake.PublicKey {
+			peer.log.Warning("decryptHandshake: dropping packet with different public key to existing session")
+		}
+	} // TODO: add state check for ip6 match
+
+	if peer.nextNonce < 2 && nonce == math.MaxUint32 && peer.requireAuth == false {
+		// TODO: write connect-to-me response code
+		peer.resetSession()
+		// TODO: check for success of encryptedHandshake
+		encryptedHandshake := peer.encryptHandshake(data, 1)
+		return encryptedHandshake
+	}
+
 	panic("i dont know how to decrypt a handshake")
 	return nil
 }
 
-func (peer *Peer) encryptHandshake() []byte {
+func (peer *Peer) encryptHandshake(msg []byte, isSetup int) []byte {
 	h := new(CryptoAuth_Handshake)
 	h.Challenge = new(CryptoAuth_Challenge)
 	var passwordHash [32]byte
@@ -118,11 +188,11 @@ func (peer *Peer) encryptHandshake() []byte {
 	}
 
 	if peer.nextNonce < 2 {
-		getSharedSecret(peer.routerKeyPair.privateKey, peer.publicKey, passwordHash[:])
+		computeSharedSecretWithPasswordHash(peer.routerKeyPair.privateKey, peer.publicKey, passwordHash)
 		peer.initiator = true
 		peer.nextNonce = 1
 	} else {
-		getSharedSecret(peer.routerKeyPair.privateKey, peer.publicKey, passwordHash[:])
+		computeSharedSecretWithPasswordHash(peer.routerKeyPair.privateKey, peer.publicKey, passwordHash)
 		peer.nextNonce = 3
 	}
 

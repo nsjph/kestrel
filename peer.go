@@ -17,13 +17,13 @@ func (peer *Peer) dumpKeys() {
 
 }
 
-func (peer *Peer) sendMessage(msg []byte) {
-	if peer.nextNonce < 4 {
-		n, err := peer.conn.WriteToUDP(msg, peer.addr)
-		checkFatal(err)
-		peer.log.Debug("Peer.sendMessage(): wrote %d bytes to peer %s", n, peer.name)
-	}
-}
+// func (peer *Peer) sendMessage(msg []byte) {
+// 	if peer.nextNonce < 4 {
+// 		n, err := peer.conn.WriteToUDP(msg, peer.addr)
+// 		checkFatal(err)
+// 		peer.log.Debug("Peer.sendMessage(): wrote %d bytes to peer %s", n, peer.name)
+// 	}
+// }
 
 func (peer *Peer) establishSession() {
 	// Send Hello Packet

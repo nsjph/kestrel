@@ -143,6 +143,7 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 	peer.addr = addr
 	peer.name = addr.String()
 	peer.routerKeyPair = u.keyPair
+	peer.replayProtector = new(ReplayProtector)
 	peer.conn = u.conn
 	peer.log = u.log
 	peer.established = false

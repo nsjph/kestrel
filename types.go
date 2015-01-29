@@ -82,17 +82,27 @@ type Peer struct {
 	addr *net.UDPAddr
 	conn *net.UDPConn
 	//server        *UDPServer
-	password      []byte // static password for incoming / outgoing peers..?
-	state         uint32 // handshake state or nonce
-	nextNonce     uint32
-	tempKeyPair   *KeyPair
-	routerKeyPair *KeyPair
-	sharedSecret  [32]byte
-	publicKey     [32]byte
-	log           *logging.Logger
-	passwordHash  [32]byte
-	initiator     bool
-	established   bool
+	password        []byte // static password for incoming / outgoing peers..?
+	state           uint32 // handshake state or nonce
+	nextNonce       uint32
+	tempKeyPair     *KeyPair
+	routerKeyPair   *KeyPair
+	sharedSecret    [32]byte
+	publicKey       [32]byte
+	log             *logging.Logger
+	passwordHash    [32]byte
+	initiator       bool
+	established     bool
+	requireAuth     bool
+	replayProtector *ReplayProtector
+}
+
+type ReplayProtector struct {
+	bitfield           uint64
+	baseOffset         uint32
+	duplicates         uint32
+	lostPackets        uint32
+	receivedOutOfRange uint32
 }
 
 type Message struct {
