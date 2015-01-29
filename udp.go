@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	_ "code.google.com/p/gopacket"
 	_ "crypto/sha256"
 	_ "encoding/binary"
@@ -26,8 +27,7 @@ import (
 )
 
 const (
-	UDP_MAX_PACKET_SIZE = 8192
-
+	UDP_MAX_PACKET_SIZE    = 8192
 	UDP_PADDING            = 512
 	UDP_MAX_PACKET_PAYLOAD = UDP_MAX_PACKET_SIZE - UDP_PADDING
 )
@@ -41,8 +41,15 @@ func (c *ServerConfig) newUDPServer() *UDPServer {
 	u.config = c
 	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
 	u.keyPair = u.config.getServerKeyPair()
-
+	u.accounts = make([]*Account, 100)
+	//u.addAccount(c.Password, 1, nil)
 	u.peers = make(map[string]*Peer)
+
+	u.auth = new(CryptoAuth_Auth)
+	u.auth.keyPair = u.config.getServerKeyPair()
+	u.auth.accounts = make([]*Account, 100)
+	u.auth.addAccount(c.Password, 1, nil)
+	u.auth.log = initLogger("kestrel2", logging.DEBUG, os.Stderr)
 
 	return u
 }
@@ -88,7 +95,7 @@ func (u *UDPServer) readLoop() {
 			peer = u.newPeer(addr)
 		}
 
-		peer.receiveMessage(payload)
+		peer.receiveMessage(payload, u.auth)
 
 		// Check if it is a handshake or data packet
 		// stage := binary.BigEndian.Uint32(payload[:4])
@@ -169,4 +176,46 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 	u.peers[peer.name] = peer
 
 	return peer
+}
+
+// TODO: Decide if this is the right place for addAccount related functions
+
+func (auth *CryptoAuth_Auth) addAccount(password string, authType int, username []byte) {
+	auth.addAccountWithIPv6(password, authType, username, nil)
+}
+
+func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, username []byte, ipv6 *net.Addr) {
+	passwordHash := hashPassword_256([]byte(password))
+
+	for _, v := range auth.accounts {
+		//auth.log.Debug("i = %d", i)
+		if v == nil {
+			//auth.log.Debug("addAccountWithIPv6")
+			return
+		}
+		if v.secret == passwordHash {
+			auth.log.Warning("addAccountWithIPv6: account already exists")
+			return
+		}
+
+		if bytes.Compare(username, v.username) == 0 {
+			auth.log.Warning("addAccountWithIPv6: username already exists")
+			return
+		}
+
+	}
+
+	account := new(Account)
+
+	account.username = username
+	if ipv6 != nil {
+		account.restrictedToIPv6 = ipv6
+		// TODO: add check to validate the IPv6
+		//u.log.Warning("addAccountWithIPv6: invalid ipv6")
+		//return
+	} else {
+		account.restrictedToIPv6 = nil
+	}
+
+	auth.accounts = append(auth.accounts, account)
 }

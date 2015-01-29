@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	CryptoHeader_MAXLEN = 120
+	CryptoHeader_MAXLEN                       = 120
+	CryptoAuth_RESET_AFTER_INACTIVITY_SECONDS = 60
 )
 
 type CryptoAuth_Challenge struct {
@@ -25,12 +26,13 @@ type CryptoAuth_Challenge struct {
 }
 
 type CryptoAuth_Handshake struct {
-	Stage         uint32
-	Challenge     *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
-	Nonce         [24]byte              // 24 bytes
-	PublicKey     [32]byte
-	Authenticator [16]byte // 16 bytes
-	TempPublicKey [32]byte // 32 bytes
+	Stage                               uint32
+	Challenge                           *CryptoAuth_Challenge // We use a generic container initially then decode it into appropriate struct later
+	Nonce                               [24]byte              // 24 bytes
+	PublicKey                           [32]byte
+	AuthenticatorAndencryptedTempPubKey [48]byte
+	//Authenticator                       [16]byte // 16 bytes
+	//TempPublicKey                       [32]byte // 32 bytes
 }
 
 func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
@@ -51,8 +53,8 @@ func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
 	binary.Read(r, binary.BigEndian, &h.Challenge.Additional)
 	binary.Read(r, binary.BigEndian, &h.Nonce)
 	binary.Read(r, binary.BigEndian, &h.PublicKey)
-	binary.Read(r, binary.BigEndian, &h.Authenticator)
-	binary.Read(r, binary.BigEndian, &h.TempPublicKey)
+	binary.Read(r, binary.BigEndian, &h.AuthenticatorAndencryptedTempPubKey)
+	//binary.Read(r, binary.BigEndian, &h.TempPublicKey)
 
 	return h, nil
 }
@@ -156,8 +158,11 @@ func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) []byte {
 	return encryptedMsg
 }
 
-func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) {
+func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) ([]byte, bool) {
 
+	var out []byte
+
+	return box.OpenAfterPrecomputation(out, msg, &nonce, &sharedSecret)
 }
 
 // this is horribly inefficient i think, because i'm a golang/binary noob --jph
@@ -213,3 +218,82 @@ func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiato
 	return convertedNonce
 
 }
+
+func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Account {
+	// Check the challenge.Type == 1
+	if challengeAsBytes[0] != 1 {
+		peer.log.Warning("getAuth: invalid auth type")
+		// TODO: make sure calling function checks that this is empty
+		return nil
+	}
+
+	for _, v := range auth.accounts {
+		if v == nil {
+			auth.log.Debug("getAuth: v == nil")
+			return nil
+		}
+		if isEmpty(v.secret) {
+			auth.log.Debug("getAuth: v.secret is empty")
+			return nil
+		}
+		// Check for match, if so return the full secret
+		var a []byte
+		var b []byte
+		copy(a, challengeAsBytes[0:8])
+		copy(b, v.secret[0:8])
+		if bytes.Compare(a, b) == 0 {
+			return v
+		}
+	}
+
+	// TODO: Check calling function checks if this is empty
+	return nil
+
+}
+
+func (peer *Peer) getPasswordHash_typeOne(derivations uint16) [32]byte {
+	if derivations != uint16(0) {
+		var output [32]byte
+		copy(output[:], peer.sharedSecret[:32])
+		b := make([]byte, 2)
+		// littleEndian case from encoding/binary.go
+		b[0] = byte(derivations)
+		b[1] = byte(derivations >> 8)
+
+		output[0] ^= b[0]
+		output[1] ^= b[1]
+
+		spew.Printf("getPasswordHash_typeOne(%v) -> [%v]", derivations, output)
+
+		return sha256.Sum256(output[:])
+
+		//buf := bytes.NewReader(derivations)
+		//x := binary.Read()
+	}
+
+	return [32]byte{}
+
+}
+
+func (peer *Peer) tryAuth(h *CryptoAuth_Handshake, challengeAsBytes [12]byte, account *Account, auth *CryptoAuth_Auth) (x [32]byte) {
+
+	account = auth.getAuth(challengeAsBytes, peer)
+
+	if h.Challenge != nil {
+		derivations := getAuthChallengeDerivations(h.Challenge.RequirePacketAuthAndDerivationCount)
+		passwordHash := peer.getPasswordHash_typeOne(derivations)
+		spew.Printf("tryAuth: derivations = [%v]", derivations)
+		if derivations == 0 {
+			peer.log.Debug("tryAuth: derivations == 0, not sure what to do")
+			return [32]byte{}
+		}
+		return passwordHash
+	}
+
+	// TODO: fix this
+	panic("tryAuth: I dont know how to tryauth")
+	return x
+
+}
+
+//func addUser ()

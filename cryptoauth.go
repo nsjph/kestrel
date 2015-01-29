@@ -18,14 +18,14 @@ import (
 	_ "math"
 )
 
-func (peer *Peer) receiveMessage(msg []byte) (int, []byte, error) {
+func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) (int, []byte, error) {
 	if len(msg) < 20 {
 		peer.log.Warning("receiveMessage(): packet too short, dropping")
 		return -1, nil, errors.New("Error_UNDERSIZE_MESSAGE")
 	}
 
-	nonce := binary.BigEndian.Uint32(msg[:4])
-	peer.log.Debug("receiveMessage: nonce is [%u]", nonce)
+	nonce := binary.LittleEndian.Uint32(msg[:4])
+	peer.log.Debug("receiveMessage: nonce is [%v]", nonce)
 
 	if peer.established != true {
 		if nonce > 3 && nonce != math.MaxUint32 {
@@ -39,7 +39,7 @@ func (peer *Peer) receiveMessage(msg []byte) (int, []byte, error) {
 			peer.nextNonce += 3
 
 			// return code, body of decrypted message, error message
-			ret, _, _ := peer.decryptMessage(nonce, msg[4:], sharedSecret)
+			ret, _, _ := peer.decryptMessage(nonce, msg, sharedSecret)
 			if ret == 0 { // success
 				peer.log.Debug("receiveMessage: Handshake completed!")
 				peer.sharedSecret = sharedSecret
@@ -53,7 +53,7 @@ func (peer *Peer) receiveMessage(msg []byte) (int, []byte, error) {
 
 		}
 
-		return 0, peer.decryptHandshake(nonce, msg), nil
+		return 0, peer.decryptHandshake(msg, auth), nil
 
 	} else if nonce > 3 && nonce != math.MaxUint32 {
 		ret, _, _ := peer.decryptMessage(nonce, msg, peer.sharedSecret)
@@ -127,7 +127,7 @@ func (peer *Peer) resetSession() {
 	peer.replayProtector = new(ReplayProtector)
 }
 
-func (peer *Peer) decryptHandshake(nonce uint32, data []byte) []byte {
+func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 
 	if len(data) < CryptoHeader_MAXLEN {
 		peer.log.Warning("decryptHandshake: short packet received from %s", peer.name)
@@ -135,7 +135,21 @@ func (peer *Peer) decryptHandshake(nonce uint32, data []byte) []byte {
 		return nil
 	}
 
+	var nextNonce uint32
+
 	handshake, err := decodeHandshake(data)
+	nonce := handshake.Stage // shoot me now
+
+	//nonce := handshake.Nonce
+
+	peer.log.Debug("decryptHandshake: nonce is %d", handshake.Nonce)
+
+	var challengeAsBytes [12]byte
+	copy(challengeAsBytes[:], data[4:16])
+
+	encryptedTempPubKey := make([]byte, 48) // authenticator = 16, key = 32
+	copy(encryptedTempPubKey, data[72:120])
+
 	checkFatal(err)
 
 	if isEmpty(peer.publicKey) == false {
@@ -152,7 +166,137 @@ func (peer *Peer) decryptHandshake(nonce uint32, data []byte) []byte {
 		return encryptedHandshake
 	}
 
-	panic("i dont know how to decrypt a handshake")
+	//var user []byte
+
+	account := new(Account)
+	passwordHash := peer.tryAuth(handshake, challengeAsBytes, account, auth)
+
+	// TODO: validate this check works as intended
+	if isEmpty(account.secret) == false {
+		account.username = []byte("")
+	}
+
+	if peer.requireAuth && isEmpty(account.secret) == true {
+		peer.log.Warning("decryptHandshake: Dropping packet because no authentication was provided")
+		return nil
+	}
+
+	if isEmpty(passwordHash) && handshake.Challenge.Type != 0 {
+		peer.log.Warning("decryptHandshake: Dropping packet with unrecognized auth")
+		return nil
+	}
+
+	if nonce < 2 {
+		if nonce == 0 {
+			peer.log.Debug("Received a hello packet")
+		} else {
+			peer.log.Debug("received a repeat hello")
+		}
+
+		if isEmpty(peer.publicKey) || peer.nextNonce == 0 {
+			peer.publicKey = handshake.PublicKey
+		} else if peer.publicKey != handshake.PublicKey {
+			peer.log.Warning("decryptHandshake: Dropping packet with wrong permanent public key")
+			// TODO: fix these error condition return values. Put an error message or something to indicate non-ok status
+			return nil
+		}
+
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, passwordHash)
+		nextNonce = 2
+
+	} else {
+		if nonce == 2 {
+			peer.log.Debug("decryptHandshake: received a key packet")
+		} else if nonce == 3 {
+			peer.log.Debug("decryptHandshake: received a repeat key packet")
+		} else {
+			peer.log.Debug("decryptHandshake: received a packet of unknown type. nonce = [%u]", nonce)
+		}
+
+		if peer.initiator == true {
+			peer.log.Warning("decryptHandshake: Dropping a stray key packet")
+			return nil
+		}
+
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, passwordHash)
+		nextNonce = 4
+
+	}
+
+	peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.AuthenticatorAndencryptedTempPubKey)
+
+	var herTempPublicKey [32]byte
+	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, []byte(handshake.AuthenticatorAndencryptedTempPubKey[:]), peer.sharedSecret)
+
+	if success == false {
+		peer.log.Warning("decryptHandshake: Dropping message, decryption failed")
+		return nil
+	} else {
+		// TODO: need an assert to validate that we only got 32 bytes back from decrypting the handshake
+		copy(herTempPublicKey[:], decryptedHandshake[:32])
+		peer.tempPublicKey = herTempPublicKey
+	}
+
+	if nonce == 0 {
+		if peer.tempPublicKey == herTempPublicKey {
+			peer.log.Warning("decryptHandshake: Dropping dupe hello packet with same temporary key")
+			return nil
+		}
+	} else if nonce == 2 && peer.nextNonce >= 4 {
+		if peer.tempPublicKey == herTempPublicKey {
+			peer.log.Warning("decryptHandshake: Dropping dupe key packet with same temporary public key")
+			return nil
+		}
+
+	} else if nonce == 3 && peer.nextNonce >= 4 {
+		if peer.tempPublicKey != herTempPublicKey {
+			peer.log.Debug("decryptHandshake: Dropping repeat key packet with different temporary public key")
+			return nil
+		}
+
+	}
+
+	// Check for repeat key packet and avoid deadlock
+	if nextNonce == 4 {
+		if peer.nextNonce <= 4 {
+			peer.nextNonce = nextNonce
+		} else {
+			peer.sharedSecret = computeSharedSecret(peer.tempKeyPair.privateKey, peer.tempPublicKey)
+			peer.log.Warning("decryptHandshake: New key packet but we are already sending data")
+		}
+	} else if nextNonce != 2 {
+		peer.log.Warning("decryptHandshake: Shouldn't reach here")
+	} else if peer.initiator == false || peer.established == true {
+		if peer.established {
+			peer.resetSession()
+		}
+
+		if peer.nextNonce == 3 {
+			nextNonce = 3
+		}
+
+		peer.nextNonce = nextNonce
+
+	} else if bytes.Compare([]byte(peer.publicKey[:]), []byte(auth.keyPair.publicKey[:])) < 0 {
+		peer.log.Debug("decryptHandshake: Incoming hello from node with lower key, resetting")
+		peer.resetSession()
+		peer.nextNonce = nextNonce
+	} else {
+		peer.log.Debug("decryptHandshake: Incoming hello from node with higher key, not resetting")
+	}
+
+	// TODO: Skipped condition where handshake was initiated in reverse and we have buffered messages -- FIXME
+
+	// TODO: Test this condition
+	if len(data) == CryptoHeader_MAXLEN {
+		if handshake.Challenge.isSetupPacket() == 1 {
+			return nil
+		}
+	}
+
+	//passwordHash := peer.tryAuth(handshake, auth)
+
+	panic("i dont know what to do now!")
 	return nil
 }
 
@@ -184,7 +328,7 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int) []byte {
 
 	if peer.nextNonce == 0 || peer.nextNonce == 2 {
 		peer.tempKeyPair = createTempKeyPair()
-		h.TempPublicKey = peer.tempKeyPair.publicKey
+		//h.tempPublicKey = peer.tempKeyPair.publicKey
 	}
 
 	if peer.nextNonce < 2 {

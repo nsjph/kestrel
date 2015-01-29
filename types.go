@@ -13,6 +13,20 @@ type ServerInfo struct {
 	Peers     []PeerInfo
 }
 
+type Account struct {
+	username         []byte
+	secret           [32]byte
+	restrictedToIPv6 *net.Addr
+}
+
+// TODO: Move the server-side credentials away from the *Peer
+// particularly the accounts
+type CryptoAuth_Auth struct {
+	accounts []*Account
+	keyPair  *KeyPair
+	log      *logging.Logger // go-logging
+}
+
 type PeerInfo struct {
 	PublicAddress *net.IPAddr
 	CjdnsAddress  *net.IPAddr
@@ -36,13 +50,15 @@ type ServerConfig struct {
 }
 
 type UDPServer struct {
-	conn    *net.UDPConn
-	keyPair *KeyPair
-	config  *ServerConfig
-	bufsz   int
-	padsz   int
-	log     *logging.Logger // go-logging
-	peers   map[string]*Peer
+	conn     *net.UDPConn
+	keyPair  *KeyPair
+	config   *ServerConfig
+	bufsz    int
+	padsz    int
+	log      *logging.Logger // go-logging
+	peers    map[string]*Peer
+	accounts []*Account
+	auth     *CryptoAuth_Auth
 }
 
 type InterfaceController struct {
@@ -85,10 +101,11 @@ type Peer struct {
 	password        []byte // static password for incoming / outgoing peers..?
 	state           uint32 // handshake state or nonce
 	nextNonce       uint32
-	tempKeyPair     *KeyPair
+	tempKeyPair     *KeyPair // This is our tempKeyPair, not actually the peers
 	routerKeyPair   *KeyPair
 	sharedSecret    [32]byte
 	publicKey       [32]byte
+	tempPublicKey   [32]byte // This is the remote peer's temporary public key
 	log             *logging.Logger
 	passwordHash    [32]byte
 	initiator       bool
