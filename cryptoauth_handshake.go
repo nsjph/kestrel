@@ -14,12 +14,28 @@ type CryptoAuthChallenge struct {
 type CryptoAuthHandshake struct {
 	Stage uint32
 	//	Challenge *CryptoAuthChallenge // We use a generic container initially then decode it into appropriate struct later
-	Challenge [12]byte
-	Nonce     [24]byte // 24 bytes
-	PublicKey [32]byte
+	Challenge []byte // 12 bytes
+	Nonce     []byte // 24 bytes
+	PublicKey []byte // 32
 	//AuthenticatorAndencryptedTempPubKey []byte
-	Authenticator [16]byte // 16 bytes
-	TempPublicKey [32]byte // 32 bytes
+	Authenticator []byte // 16 bytes
+	TempPublicKey []byte // 32 bytes
+	Payload       []byte
+}
+
+// For MessageType Interface
+func (h *CryptoAuthHandshake) Protocol() int {
+	return CRYPTOAUTH_HANDSHAKE_PACKET
+}
+
+// For MessageBody Interface
+func (h *CryptoAuthHandshake) Len() int {
+	return 120
+}
+
+// For MessageBody Interface
+func (h *CryptoAuthHandshake) Marshal(protocol int) ([]byte, error) {
+	return nil, nil
 }
 
 func parseCryptoAuthChallengeHeader(data []byte) (*CryptoAuthChallenge, error) {
@@ -34,9 +50,12 @@ func parseCryptoAuthChallengeHeaderAsBytes(data []byte) ([]byte, error) {
 func parseCryptoAuthHandshake(data []byte) (*CryptoAuthHandshake, error) {
 
 	h := &CryptoAuthHandshake{
-		Stage: binary.BigEndian.Uint32(data[0:4]),
-    Challenge: data[4:16],
-    Nonce: [16:40],
+		Stage:         binary.BigEndian.Uint32(data[0:4]),
+		Challenge:     data[4:16],
+		Nonce:         data[16:40],
+		PublicKey:     data[40:72],
+		Authenticator: data[72:88],
+		TempPublicKey: data[88:120],
 	}
 
 	return h, nil

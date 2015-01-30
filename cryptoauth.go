@@ -7,7 +7,6 @@ import (
 	_ "code.google.com/p/gopacket"
 	_ "code.google.com/p/gopacket/layers"
 	"crypto/rand"
-	_ "crypto/sha256"
 	"encoding/binary"
 	_ "encoding/hex"
 	"errors"
