@@ -97,7 +97,7 @@ func (u *UDPServer) readLoop() {
 			peer = u.newPeer(addr)
 		}
 
-		peer.receiveMessage(payload, u.auth)
+		peer.receiveMessage(payload[:n], u.auth)
 
 		// Check if it is a handshake or data packet
 		// stage := binary.BigEndian.Uint32(payload[:4])
@@ -156,6 +156,7 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 	peer.conn = u.conn
 	peer.log = u.log
 	peer.established = false
+	peer.nextNonce = 0
 
 	// if we have their password, we'll use password auth to connect
 
@@ -189,7 +190,7 @@ func (auth *CryptoAuth_Auth) addAccount(password string, authType int, username 
 }
 
 func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, username []byte, ipv6 *net.Addr) {
-	passwordHash := hashPassword_256([]byte(password))
+	passwordHash, secondHash := hashPassword_256([]byte(password))
 
 	account := auth.accounts[passwordHash]
 
@@ -199,6 +200,9 @@ func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, u
 		// TODO: make username something meaningful
 		account.username = []byte("blah")
 		account.restrictedToIPv6 = ipv6
+		account.secret = passwordHash
+		account.secondHash = secondHash
+		account.password = password
 		auth.accounts[passwordHash] = account
 	} else {
 		log.Println("addAccountWithIPv6: account already exists")

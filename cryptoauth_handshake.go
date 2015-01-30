@@ -25,7 +25,7 @@ type CryptoAuthHandshake struct {
 
 // For MessageType Interface
 func (h *CryptoAuthHandshake) Protocol() int {
-	return CRYPTOAUTH_HANDSHAKE_PACKET
+	return CRYPTOAUTH_HANDSHAKE_MESSAGE
 }
 
 // For MessageBody Interface

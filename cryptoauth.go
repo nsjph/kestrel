@@ -10,12 +10,41 @@ import (
 	"encoding/binary"
 	_ "encoding/hex"
 	"errors"
+	_ "github.com/davecgh/go-spew/spew"
+	"github.com/op/go-logging"
 	_ "golang.org/x/crypto/curve25519"
 	_ "golang.org/x/crypto/nacl/box"
 	_ "log"
 	"math"
 	_ "math"
 )
+
+// type CryptoAuthMessage struct {
+// 	Type     MessageType // type, either cryptoauth.handshake or cryptoauth.data
+// 	Code     int         // code - state of the message, mainly for handshakes
+// 	Checksum int         // checksum -- probably unecessary
+// 	Body     MessageBody // body
+// }
+
+// type CryptoAuthMessageBody struct {
+
+// }
+
+func parseCryptoAuthMessage(data []byte, log *logging.Logger, peer *Peer) (*Message, error) {
+
+	var nonce uint32 = binary.BigEndian.Uint32(data[0:4])
+
+	if peer.established == false {
+		if nonce > 3 && nonce != math.MaxUint32 {
+			if peer.nextNonce < 3 {
+				log.Notice("Dropping cryptoauth message to an unsetup session")
+				return nil, &cjdnsError{ERROR_UNDELIVERABLE, "Dropping cryptoauth message to unsetup session"}
+			}
+		}
+	}
+
+	return nil, nil
+}
 
 func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) (int, []byte, error) {
 	if len(msg) < 20 {
@@ -24,7 +53,7 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) (int, []byte
 	}
 
 	nonce := binary.BigEndian.Uint32(msg[:4])
-	peer.log.Debug("receiveMessage: nonce is [%v]", nonce)
+	peer.log.Debug("receiveMessage: littleEndian nonce is [%v], bigEndian nonce is [%v]", binary.LittleEndian.Uint32(msg[:4]), nonce)
 
 	if peer.established == false {
 		if nonce > 3 && nonce != math.MaxUint32 {
@@ -132,13 +161,15 @@ func (peer *Peer) resetSession() {
 
 func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 
-	if len(data) < CryptoHeader_MAXLEN {
+	if len(data) < 20 {
 		peer.log.Warning("decryptHandshake: short packet received from %s", peer.name)
 		// TODO: have calling function check for nil from decryptHandshake
 		return nil
 	}
 
 	var nextNonce uint32
+	//stage := binary.BigEndian.Uint32(data[0:4])
+	//herPublicKey := data[40:72]
 
 	handshake, err := decodeHandshake(data)
 	nonce := handshake.Stage // shoot me now
@@ -172,6 +203,12 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 	//var user []byte
 
 	account := new(Account)
+	//passwordHash2 := hashPassword([]byte("thisismylongtestpassword12345"), 1)
+	//peer.log.Debug("existing peer passwordHash is [%x]", hashPassword([]byte("thisismylongtestpassword12345"), 1))
+
+	// TODO: come back to this for proper auth table lookup
+
+	//spew.Dump(handshake.Challenge.RequirePacketAuthAndDerivationCount, challengeAsBytes, passwordHash2)
 	passwordHash := peer.tryAuth(handshake, challengeAsBytes, account, auth)
 
 	// TODO: validate this check works as intended
@@ -205,6 +242,7 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 		}
 
 		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, passwordHash)
+		//peer.log.Debug("computeSharedSecretWithPasswordHash: %x", peer.sharedSecret)
 		nextNonce = 2
 
 	} else {
@@ -228,7 +266,10 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 
 	//peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.AuthenticatorAndencryptedTempPubKey)
 
-	peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]", handshake.Nonce, peer.sharedSecret, handshake.TempPublicKey)
+	payload := data[72:]
+
+	//peer.log.Debug("decrypting with\n\tnonce [%x]\n\tsecret [%x]\n\tciphertext [%x]\n\tpwHash [%x]",
+	//	handshake.Nonce, peer.sharedSecret, payload, passwordHash)
 	var herTempPublicKey [32]byte
 
 	peer.log.Debug("length of message: %d", len(data))
@@ -236,8 +277,9 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) []byte {
 	// TODOD REBOALKJFDASD
 	//	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, handshake.AuthenticatorAndencryptedTempPubKey, peer.sharedSecret)
 
-	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce,
-		handshake.TempPublicKey[:], peer.sharedSecret)
+	//	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce,handshake.TempPublicKey[:], peer.sharedSecret)
+
+	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, payload, peer.sharedSecret)
 	if success == false {
 		peer.log.Warning("decryptHandshake: Dropping message, decryption failed")
 		peer.established = false
@@ -323,7 +365,8 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int) []byte {
 	h.PublicKey = peer.routerKeyPair.publicKey
 
 	if peer.password != nil {
-		passwordHash = hashPassword(peer.password, 1)
+		panic("encryptHandshake: got here")
+		//passwordHash, secondHash := hashPassword(peer.password, 1)
 		//copy(peer.passwordHash[:], hashPassword(peer.password, 1))
 		h.Challenge.Type = 1
 	} else {

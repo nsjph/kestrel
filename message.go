@@ -1,7 +1,8 @@
 package main
 
 import (
-	_ "log"
+	_ "encoding/binary"
+	"github.com/op/go-logging"
 )
 
 const (
@@ -62,27 +63,44 @@ func parseDefaultMessageBody(proto int, b []byte) (MessageBody, error) {
 	return p, nil
 }
 
-func ParseMessage(proto int, b []byte) (*Message, error) {
+func ParseMessage(proto int, b []byte, log *logging.Logger, peer *Peer) (*Message, error) {
 	// if len(b) < 4 {
 	// 	return nil, errMessageTooShort
 	// }
-	var err error
-	m := &Message{Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
+	//var err error
+
+	m := &Message{}
+
 	switch proto {
-	case iana.ProtocolICMP:
-		m.Type = ipv4.ICMPType(b[0])
-	case iana.ProtocolIPv6ICMP:
-		m.Type = ipv6.ICMPType(b[0])
-	default:
-		return nil, syscall.EINVAL
+	case CRYPTOAUTH_MESSAGE:
+
+		if len(b) < 20 {
+			log.Notice("Dropping undersized cryptoauth message")
+			return nil, &cjdnsError{ERROR_UNDERSIZE_MESSAGE, "Dropping undersized cryptoauth message"}
+		}
+
+		//var nonce uint32 = binary.BigEndian.Uint32(b[0:4])
+
 	}
-	if fn, ok := parseFns[m.Type]; !ok {
-		m.Body, err = parseDefaultMessageBody(proto, b[4:])
-	} else {
-		m.Body, err = fn(proto, b[4:])
-	}
-	if err != nil {
-		return nil, err
-	}
+
 	return m, nil
+
+	// m := &Message{Code: int(b[1]), Checksum: int(b[2])<<8 | int(b[3])}
+	// switch proto {
+	// case iana.ProtocolICMP:
+	// 	m.Type = ipv4.ICMPType(b[0])
+	// case iana.ProtocolIPv6ICMP:
+	// 	m.Type = ipv6.ICMPType(b[0])
+	// default:
+	// 	return nil, syscall.EINVAL
+	// }
+	// if fn, ok := parseFns[m.Type]; !ok {
+	// 	m.Body, err = parseDefaultMessageBody(proto, b[4:])
+	// } else {
+	// 	m.Body, err = fn(proto, b[4:])
+	// }
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return m, nil
 }

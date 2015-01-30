@@ -59,29 +59,32 @@ func decodeHandshake(data []byte) (*CryptoAuth_Handshake, error) {
 	return h, nil
 }
 
-func hashPassword_256(password []byte) (passwordHash [32]byte) {
+func hashPassword_256(password []byte) (passwordHash [32]byte, secondHash [32]byte) {
 
 	pw_hash1 := sha256.Sum256(password)
+	// pw_hash2 is used to 'obfuscate' the password hash... i think. See cryptoauth.c ~151
 	pw_hash2 := sha256.Sum256(pw_hash1[:32])
 
-	copy(passwordHash[:], pw_hash2[:32])
+	copy(passwordHash[:], pw_hash1[:32])
+	copy(secondHash[:], pw_hash2[:32])
 
-	return passwordHash
+	return passwordHash, secondHash
 
 	//log.Printf("original %s, hashed %x", password, pw_hash2[:12])
 	//return pw_hash2[:32]
 }
 
-func hashPassword(password []byte, authType int) (passwordHash [32]byte) {
+func hashPassword(password []byte, authType int) (passwordHash [32]byte, secondHash [32]byte) {
 	switch authType {
 	case 1:
-		passwordHash = hashPassword_256(password)
+		passwordHash, secondHash = hashPassword_256(password)
+
 		//return hashPassword_256(password)
 	default:
 		log.Println("Error: hashPassword() Unsupported authType")
 	}
 	// TODO: review this...
-	return passwordHash
+	return passwordHash, secondHash
 }
 
 func computeSharedSecret(privateKey [32]byte, herPublicKey [32]byte) (sharedSecret [32]byte) {
@@ -108,8 +111,15 @@ func computeSharedSecretWithPasswordHash(privateKey [32]byte, herPublicKey [32]b
 }
 
 // Assume this is already host endian format
-func getAuthChallengeDerivations(derivations uint16) uint16 {
-	return derivations & ^uint16(0) >> 1
+func getAuthChallengeDerivations(derivationsAsBytes []byte) uint16 {
+
+	derivations := binary.LittleEndian.Uint16(derivationsAsBytes)
+
+	spew.Dump(derivations)
+
+	derivations &= ^uint16(0) >> 1
+	spew.Dump(derivations)
+	return derivations
 }
 
 // We don't convert endianness here, we do that when writing out the final packet
@@ -160,9 +170,10 @@ func encryptRandomNonce(nonce [24]byte, msg []byte, secret [32]byte) []byte {
 
 func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) ([]byte, bool) {
 
-	var out []byte
+	//var out []byte
 
-	decrypted, success := box.OpenAfterPrecomputation(out, msg, &nonce, &sharedSecret)
+	decrypted, success := box.OpenAfterPrecomputation(msg, msg, &nonce, &sharedSecret)
+	spew.Dump(success)
 	//spew.Dump(msg)
 
 	return decrypted, success
@@ -234,8 +245,8 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 
 	//account := auth.accounts[]
 
-	for k, v := range auth.accounts {
-		spew.Printf("getAuth: k = [%x]\n", k)
+	for _, v := range auth.accounts {
+		spew.Printf("getAuth:\ns = [%v]\nc = [%v]\n", v.secret, challengeAsBytes)
 
 		// if v == nil {
 		// 	auth.log.Debug("getAuth: v == nil")
@@ -249,9 +260,12 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 		var a []byte
 		var b []byte
 		copy(a, challengeAsBytes[0:8])
-		copy(b, k[:]) // the key for auth.accounts map is the passwordHash
+		copy(b, v.secret[:]) // the key for auth.accounts map is the passwordHash
 		if bytes.Compare(a, b) == 0 {
+			peer.log.Debug("getAuth: found a matching account")
 			return v
+		} else {
+			peer.log.Debug("getAuth: didn't find a matching account")
 		}
 	}
 
@@ -260,21 +274,35 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 
 }
 
-func (peer *Peer) getPasswordHash_typeOne(derivations uint16) [32]byte {
+func (peer *Peer) getPasswordHash_typeOne(derivations uint16, account *Account) [32]byte {
+
+	peer.log.Warning("inside getPasswordHash_typeOne: %d", derivations)
+
 	if derivations != uint16(0) {
-		var output [32]byte
-		copy(output[:], peer.sharedSecret[:32])
-		b := make([]byte, 2)
+		var output [32]byte = account.secret
+		//copy(output[:], account.secret[:])
+		//copy(output[:], peer.)
+		//b := make([]byte, 2)
+		var b [2]uint8
+		c := make([]byte, 2)
 		// littleEndian case from encoding/binary.go
-		b[0] = byte(derivations)
-		b[1] = byte(derivations >> 8)
+		b[0] = byte(derivations >> 8)
+		b[1] = byte(derivations)
 
-		output[0] ^= b[0]
-		output[1] ^= b[1]
+		binary.BigEndian.PutUint16(c, derivations)
 
-		spew.Printf("getPasswordHash_typeOne(%d) -> [%d]\n", derivations, output)
+		//output[0] ^= b[0]
+		//output[1] ^= b[1]
 
-		return sha256.Sum256(output[:])
+		output[0] ^= c[0]
+		output[1] ^= c[1]
+
+		spew.Printf("output: [%v]\n", output)
+		spew.Printf("getPasswordHash_typeOne(%d) -> [%x]\n", derivations, output)
+
+		myhash := sha256.Sum256(output[:])
+		spew.Printf("typeOne hash: %x\n", myhash)
+		return myhash
 
 		//buf := bytes.NewReader(derivations)
 		//x := binary.Read()
@@ -289,10 +317,13 @@ func (peer *Peer) getPasswordHash_typeOne(derivations uint16) [32]byte {
 func (peer *Peer) tryAuth(h *CryptoAuth_Handshake, challengeAsBytes [12]byte, account *Account, auth *CryptoAuth_Auth) (x [32]byte) {
 
 	account = auth.getAuth(challengeAsBytes, peer)
+	if isEmpty(account.secret) != true {
+		return account.secret
+	}
 
 	if h.Challenge != nil {
-		derivations := getAuthChallengeDerivations(h.Challenge.RequirePacketAuthAndDerivationCount)
-		passwordHash := peer.getPasswordHash_typeOne(derivations)
+		derivations := getAuthChallengeDerivations(challengeAsBytes[8:10])
+		passwordHash := peer.getPasswordHash_typeOne(derivations, account)
 		spew.Printf("tryAuth: derivations = [%v]", derivations)
 		if derivations == 0 {
 			peer.log.Debug("tryAuth: derivations == 0, not sure what to do")

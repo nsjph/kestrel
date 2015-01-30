@@ -15,7 +15,9 @@ type ServerInfo struct {
 
 type Account struct {
 	username         []byte
+	password         string
 	secret           [32]byte
+	secondHash       [32]byte
 	restrictedToIPv6 *net.Addr
 }
 
