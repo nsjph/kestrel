@@ -230,20 +230,26 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 		return nil
 	}
 
-	for _, v := range auth.accounts {
-		if v == nil {
-			auth.log.Debug("getAuth: v == nil")
-			return nil
-		}
-		if isEmpty(v.secret) {
-			auth.log.Debug("getAuth: v.secret is empty")
-			return nil
-		}
+	auth.log.Debug("getAuth: length of auth: [%d]", len(auth.accounts))
+
+	//account := auth.accounts[]
+
+	for k, v := range auth.accounts {
+		spew.Printf("getAuth: k = [%x]\n", k)
+
+		// if v == nil {
+		// 	auth.log.Debug("getAuth: v == nil")
+		// 	return nil
+		// }
+		// if isEmpty(v.secret) {
+		// 	auth.log.Debug("getAuth: v.secret is empty")
+		// 	return nil
+		// }
 		// Check for match, if so return the full secret
 		var a []byte
 		var b []byte
 		copy(a, challengeAsBytes[0:8])
-		copy(b, v.secret[0:8])
+		copy(b, k[:]) // the key for auth.accounts map is the passwordHash
 		if bytes.Compare(a, b) == 0 {
 			return v
 		}
@@ -266,12 +272,14 @@ func (peer *Peer) getPasswordHash_typeOne(derivations uint16) [32]byte {
 		output[0] ^= b[0]
 		output[1] ^= b[1]
 
-		spew.Printf("getPasswordHash_typeOne(%v) -> [%v]", derivations, output)
+		spew.Printf("getPasswordHash_typeOne(%d) -> [%d]\n", derivations, output)
 
 		return sha256.Sum256(output[:])
 
 		//buf := bytes.NewReader(derivations)
 		//x := binary.Read()
+	} else {
+		peer.log.Debug("getPasswordHash_typeOne: got here")
 	}
 
 	return [32]byte{}

@@ -22,7 +22,8 @@ type Account struct {
 // TODO: Move the server-side credentials away from the *Peer
 // particularly the accounts
 type CryptoAuth_Auth struct {
-	accounts []*Account
+	//accounts []*Account
+	accounts map[[32]byte]*Account // key is the hashed version of the password
 	keyPair  *KeyPair
 	log      *logging.Logger // go-logging
 }
@@ -122,12 +123,12 @@ type ReplayProtector struct {
 	receivedOutOfRange uint32
 }
 
-type Message struct {
-	length   uint32
-	padding  uint32
-	payload  []byte
-	capacity uint32
-}
+// type Message struct {
+// 	length   uint32
+// 	padding  uint32
+// 	payload  []byte
+// 	capacity uint32
+// }
 
 type EncryptedMessage2 struct {
 	handshake [120]byte

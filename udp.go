@@ -15,12 +15,13 @@
 package main
 
 import (
-	"bytes"
+	_ "bytes"
 	_ "code.google.com/p/gopacket"
 	_ "crypto/sha256"
 	_ "encoding/binary"
 	_ "encoding/hex"
 	"github.com/op/go-logging"
+	"log"
 	"net"
 	"os"
 	"syscall"
@@ -47,7 +48,8 @@ func (c *ServerConfig) newUDPServer() *UDPServer {
 
 	u.auth = new(CryptoAuth_Auth)
 	u.auth.keyPair = u.config.getServerKeyPair()
-	u.auth.accounts = make([]*Account, 100)
+	u.auth.accounts = make(map[[32]byte]*Account)
+	//u.auth.accounts = make([]*Account, 100)
 	u.auth.addAccount(c.Password, 1, nil)
 	u.auth.log = initLogger("kestrel2", logging.DEBUG, os.Stderr)
 
@@ -180,6 +182,8 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 
 // TODO: Decide if this is the right place for addAccount related functions
 
+// TODO: move the auth initialization functions outside of udp.go, doesn't belong here
+
 func (auth *CryptoAuth_Auth) addAccount(password string, authType int, username []byte) {
 	auth.addAccountWithIPv6(password, authType, username, nil)
 }
@@ -187,35 +191,51 @@ func (auth *CryptoAuth_Auth) addAccount(password string, authType int, username 
 func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, username []byte, ipv6 *net.Addr) {
 	passwordHash := hashPassword_256([]byte(password))
 
-	for _, v := range auth.accounts {
-		//auth.log.Debug("i = %d", i)
-		if v == nil {
-			//auth.log.Debug("addAccountWithIPv6")
-			return
-		}
-		if v.secret == passwordHash {
-			auth.log.Warning("addAccountWithIPv6: account already exists")
-			return
-		}
+	account := auth.accounts[passwordHash]
 
-		if bytes.Compare(username, v.username) == 0 {
-			auth.log.Warning("addAccountWithIPv6: username already exists")
-			return
-		}
-
-	}
-
-	account := new(Account)
-
-	account.username = username
-	if ipv6 != nil {
+	if account == nil {
+		account = new(Account)
+		log.Println("addAccountWithIPv6: account is nil")
+		// TODO: make username something meaningful
+		account.username = []byte("blah")
 		account.restrictedToIPv6 = ipv6
-		// TODO: add check to validate the IPv6
-		//u.log.Warning("addAccountWithIPv6: invalid ipv6")
-		//return
+		auth.accounts[passwordHash] = account
 	} else {
-		account.restrictedToIPv6 = nil
+		log.Println("addAccountWithIPv6: account already exists")
+		return
 	}
 
-	auth.accounts = append(auth.accounts, account)
+	return
+
+	// for _, v := range auth.accounts {
+	// 	//auth.log.Debug("i = %d", i)
+	// 	if v == nil {
+	// 		//auth.log.Debug("addAccountWithIPv6")
+	// 		return
+	// 	}
+	// 	if v.secret == passwordHash {
+	// 		auth.log.Warning("addAccountWithIPv6: account already exists")
+	// 		return
+	// 	}
+
+	// 	if bytes.Compare(username, v.username) == 0 {
+	// 		auth.log.Warning("addAccountWithIPv6: username already exists")
+	// 		return
+	// 	}
+
+	// }
+
+	// account := new(Account)
+
+	// account.username = username
+	// if ipv6 != nil {
+	// 	account.restrictedToIPv6 = ipv6
+	// 	// TODO: add check to validate the IPv6
+	// 	//u.log.Warning("addAccountWithIPv6: invalid ipv6")
+	// 	//return
+	// } else {
+	// 	account.restrictedToIPv6 = nil
+	// }
+
+	// auth.accounts = append(auth.accounts, account)
 }
