@@ -20,7 +20,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"golang.org/x/crypto/curve25519"
-	"log"
+	_ "log"
 	"net"
 )
 
@@ -32,7 +32,7 @@ func createTempKeyPair() *KeyPair {
 
 	//rand.Read(privateKey[:32])
 	curve25519.ScalarBaseMult(&keyPair.publicKey, &keyPair.privateKey)
-	log.Printf("tempkeypair: pubkey = [%x]", keyPair.publicKey)
+	//log.Printf("tempkeypair: pubkey = [%x]", keyPair.publicKey)
 	//return publicKey, privateKey
 	return keyPair
 }

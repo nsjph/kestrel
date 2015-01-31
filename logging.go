@@ -6,6 +6,8 @@ import (
 	_ "os"
 )
 
+var logger = logging.MustGetLogger("kestrel")
+
 var logFormat = logging.MustStringFormatter(
 	"%{color}%{time:15:04:05.000} %{shortfunc} ▶ %{level:.4s} %{id:03x}%{color:reset} %{message}",
 )
@@ -13,7 +15,7 @@ var logFormat = logging.MustStringFormatter(
 // Returns a new logger with default configuration. Called when initializing a new router
 func initLogger(program string, level logging.Level, output io.Writer) (log *logging.Logger) {
 
-	log = logging.MustGetLogger(program)
+	//log = logging.MustGetLogger(program)
 	backend := logging.NewLogBackend(output, "", 0)
 	backendFormatter := logging.NewBackendFormatter(backend, logFormat)
 	backendLevel := logging.AddModuleLevel(backend)
@@ -21,6 +23,6 @@ func initLogger(program string, level logging.Level, output io.Writer) (log *log
 
 	logging.SetBackend(backendLevel, backendFormatter)
 
-	return log
+	return logger
 
 }

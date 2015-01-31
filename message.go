@@ -76,7 +76,7 @@ func ParseMessage(proto int, b []byte, log *logging.Logger, peer *Peer) (*Messag
 
 		if len(b) < 20 {
 			log.Notice("Dropping undersized cryptoauth message")
-			return nil, &cjdnsError{ERROR_UNDERSIZE_MESSAGE, "Dropping undersized cryptoauth message"}
+			return nil, errUndersizeMessage
 		}
 
 		//var nonce uint32 = binary.BigEndian.Uint32(b[0:4])

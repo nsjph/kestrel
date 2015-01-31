@@ -241,12 +241,12 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 		return nil
 	}
 
-	auth.log.Debug("getAuth: length of auth: [%d]", len(auth.accounts))
+	//auth.log.Debug("getAuth: length of auth: [%d]", len(auth.accounts))
 
 	//account := auth.accounts[]
 
 	for _, v := range auth.accounts {
-		spew.Printf("getAuth:\ns = [%v]\nc = [%v]\n", v.secret, challengeAsBytes)
+		//spew.Printf("getAuth:\ns = [%v]\nc = [%v]\n", v.secret, challengeAsBytes)
 
 		// if v == nil {
 		// 	auth.log.Debug("getAuth: v == nil")
@@ -276,7 +276,7 @@ func (auth *CryptoAuth_Auth) getAuth(challengeAsBytes [12]byte, peer *Peer) *Acc
 
 func (peer *Peer) getPasswordHash_typeOne(derivations uint16, account *Account) [32]byte {
 
-	peer.log.Warning("inside getPasswordHash_typeOne: %d", derivations)
+	//peer.log.Warning("inside getPasswordHash_typeOne: %d", derivations)
 
 	if derivations != uint16(0) {
 		var output [32]byte = account.secret
@@ -297,8 +297,8 @@ func (peer *Peer) getPasswordHash_typeOne(derivations uint16, account *Account) 
 		output[0] ^= c[0]
 		output[1] ^= c[1]
 
-		spew.Printf("output: [%v]\n", output)
-		spew.Printf("getPasswordHash_typeOne(%d) -> [%x]\n", derivations, output)
+		//spew.Printf("output: [%v]\n", output)
+		//spew.Printf("getPasswordHash_typeOne(%d) -> [%x]\n", derivations, output)
 
 		myhash := sha256.Sum256(output[:])
 		spew.Printf("typeOne hash: %x\n", myhash)
@@ -314,27 +314,32 @@ func (peer *Peer) getPasswordHash_typeOne(derivations uint16, account *Account) 
 
 }
 
-func (peer *Peer) tryAuth(h *CryptoAuth_Handshake, challengeAsBytes [12]byte, account *Account, auth *CryptoAuth_Auth) (x [32]byte) {
+func (peer *Peer) tryAuth(h *CryptoAuth_Handshake, challengeAsBytes [12]byte, auth *CryptoAuth_Auth) (*Account, error) {
 
-	account = auth.getAuth(challengeAsBytes, peer)
+	account := auth.getAuth(challengeAsBytes, peer)
 	if isEmpty(account.secret) != true {
-		return account.secret
+		//spew.Printf("tryAuth: found account:\n%v\n", account)
+		return account, nil
+	} else {
+		return account, errAuthentication
 	}
 
-	if h.Challenge != nil {
-		derivations := getAuthChallengeDerivations(challengeAsBytes[8:10])
-		passwordHash := peer.getPasswordHash_typeOne(derivations, account)
-		spew.Printf("tryAuth: derivations = [%v]", derivations)
-		if derivations == 0 {
-			peer.log.Debug("tryAuth: derivations == 0, not sure what to do")
-			return [32]byte{}
-		}
-		return passwordHash
-	}
+	// TODO: decide if we want to keep the derivations stuff...
 
-	// TODO: fix this
-	panic("tryAuth: I dont know how to tryauth")
-	return x
+	// if h.Challenge != nil {
+	// 	derivations := getAuthChallengeDerivations(challengeAsBytes[8:10])
+	// 	passwordHash := peer.getPasswordHash_typeOne(derivations, account)
+	// 	spew.Printf("tryAuth: derivations = [%v]", derivations)
+	// 	if derivations == 0 {
+	// 		peer.log.Debug("tryAuth: derivations == 0, not sure what to do")
+	// 		return nil, errNotImplemented
+	// 	}
+	// 	return nil
+	// }
+
+	// // TODO: fix this
+	// panic("tryAuth: I dont know how to tryauth")
+	// return x
 
 }
 

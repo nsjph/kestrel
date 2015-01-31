@@ -68,18 +68,18 @@ type InterfaceController struct {
 	ifaces []*UDPServer
 }
 
-type Router struct {
-	Iface      *tun.Tun
-	PublicKey  [32]byte
-	PrivateKey [32]byte
-	UDPConn    *net.UDPConn
-	Config     *ServerConfig
-	BufSz      int
-	Log        *logging.Logger // go-logging
-	Peers3     map[string]*Peer
-	Peers      map[[32]byte]*Peer
-	keyPair    *KeyPair
-}
+// type Router struct {
+// 	Iface      *tun.Tun
+// 	PublicKey  [32]byte
+// 	PrivateKey [32]byte
+// 	UDPConn    *net.UDPConn
+// 	Config     *ServerConfig
+// 	BufSz      int
+// 	Log        *logging.Logger // go-logging
+// 	Peers3     map[string]*Peer
+// 	Peers      map[[32]byte]*Peer
+// 	keyPair    *KeyPair
+// }
 
 type Passwd struct {
 	user      [32]byte    // username string, max 32 bytes
@@ -87,9 +87,6 @@ type Passwd struct {
 	publicKey []byte      // future use - allow only a given public key to use this password
 	addr      *net.IPAddr // future use - allow on a given remote ip addr to use this password
 }
-
-// TODO: Keep this?
-type PublicKey [32]uint8
 
 type KeyPair struct {
 	publicKey  [32]byte
@@ -101,20 +98,20 @@ type Peer struct {
 	addr *net.UDPAddr
 	conn *net.UDPConn
 	//server        *UDPServer
-	password        []byte // static password for incoming / outgoing peers..?
-	state           uint32 // handshake state or nonce
-	nextNonce       uint32
-	tempKeyPair     *KeyPair // This is our tempKeyPair, not actually the peers
-	routerKeyPair   *KeyPair
-	sharedSecret    [32]byte
-	publicKey       [32]byte
-	tempPublicKey   [32]byte // This is the remote peer's temporary public key
-	log             *logging.Logger
-	passwordHash    [32]byte
-	initiator       bool
-	established     bool
-	requireAuth     bool
-	replayProtector *ReplayProtector
+	password      []byte // static password for incoming / outgoing peers..?
+	state         uint32 // handshake state or nonce
+	nextNonce     uint32
+	tempKeyPair   *KeyPair // This is our tempKeyPair, not actually the peers
+	sharedSecret  [32]byte
+	publicKey     [32]byte // the remote peer's permanent public key
+	tempPublicKey [32]byte // This is the remote peer's temporary public key
+	log           *logging.Logger
+	//passwordHash    [32]byte
+	initiator        bool
+	established      bool
+	requireAuth      bool
+	timeOfLastPacket uint32
+	replayProtector  *ReplayProtector
 }
 
 type ReplayProtector struct {

@@ -21,7 +21,8 @@ import (
 	_ "encoding/binary"
 	_ "encoding/hex"
 	"github.com/op/go-logging"
-	"log"
+	log "github.com/sirupsen/logrus"
+	_ "log"
 	"net"
 	"os"
 	"syscall"
@@ -36,11 +37,28 @@ const (
 func (c *ServerConfig) newUDPServer() *UDPServer {
 
 	u := new(UDPServer)
+	log.SetOutput(os.Stderr)
+	log.SetLevel(log.DebugLevel)
+
+	//logger.Debug("debug %s", "blah")
+	logger.Info("info")
+	logger.Notice("notice")
+	logger.Warning("warning")
+	logger.Error("err")
+	logger.Critical("crit")
 
 	u.bufsz = UDP_MAX_PACKET_SIZE
 	u.padsz = UDP_PADDING
 	u.config = c
 	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
+
+	u.log.Info("info")
+	u.log.Notice("notice")
+	u.log.Warning("warning")
+	u.log.Error("err")
+	u.log.Critical("crit")
+
+	//u.log = logger
 	u.keyPair = u.config.getServerKeyPair()
 	u.accounts = make([]*Account, 100)
 	//u.addAccount(c.Password, 1, nil)
@@ -151,10 +169,11 @@ func (u *UDPServer) newPeer(addr *net.UDPAddr) *Peer {
 
 	peer.addr = addr
 	peer.name = addr.String()
-	peer.routerKeyPair = u.keyPair
+	//peer.routerKeyPair = u.keyPair
 	peer.replayProtector = new(ReplayProtector)
 	peer.conn = u.conn
 	peer.log = u.log
+	peer.requireAuth = true
 	peer.established = false
 	peer.nextNonce = 0
 
