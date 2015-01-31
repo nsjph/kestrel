@@ -20,8 +20,8 @@ import (
 	_ "crypto/sha256"
 	_ "encoding/binary"
 	_ "encoding/hex"
-	"github.com/op/go-logging"
-	log "github.com/sirupsen/logrus"
+	_ "github.com/op/go-logging"
+	"github.com/sirupsen/logrus"
 	_ "log"
 	"net"
 	"os"
@@ -37,26 +37,21 @@ const (
 func (c *ServerConfig) newUDPServer() *UDPServer {
 
 	u := new(UDPServer)
-	log.SetOutput(os.Stderr)
-	log.SetLevel(log.DebugLevel)
-
-	//logger.Debug("debug %s", "blah")
-	logger.Info("info")
-	logger.Notice("notice")
-	logger.Warning("warning")
-	logger.Error("err")
-	logger.Critical("crit")
 
 	u.bufsz = UDP_MAX_PACKET_SIZE
 	u.padsz = UDP_PADDING
 	u.config = c
-	u.log = initLogger("kestrel", logging.DEBUG, os.Stderr)
+	u.log = logrus.New()
+	//u.log.
+	u.log.Out = os.Stderr
+	u.log.Level = logrus.DebugLevel
+	//u.log.
+	//initLogger("kestrel", logging.DEBUG, os.Stderr)
 
 	u.log.Info("info")
-	u.log.Notice("notice")
-	u.log.Warning("warning")
+
+	u.log.Warn("warning")
 	u.log.Error("err")
-	u.log.Critical("crit")
 
 	//u.log = logger
 	u.keyPair = u.config.getServerKeyPair()
@@ -69,7 +64,7 @@ func (c *ServerConfig) newUDPServer() *UDPServer {
 	u.auth.accounts = make(map[[32]byte]*Account)
 	//u.auth.accounts = make([]*Account, 100)
 	u.auth.addAccount(c.Password, 1, nil)
-	u.auth.log = initLogger("kestrel2", logging.DEBUG, os.Stderr)
+	u.auth.log = u.log // initLogger("kestrel2", logging.DEBUG, os.Stderr)
 
 	return u
 }
@@ -215,7 +210,7 @@ func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, u
 
 	if account == nil {
 		account = new(Account)
-		log.Println("addAccountWithIPv6: account is nil")
+		logrus.Println("addAccountWithIPv6: account is nil")
 		// TODO: make username something meaningful
 		account.username = []byte("blah")
 		account.restrictedToIPv6 = ipv6
@@ -224,7 +219,7 @@ func (auth *CryptoAuth_Auth) addAccountWithIPv6(password string, authType int, u
 		account.password = password
 		auth.accounts[passwordHash] = account
 	} else {
-		log.Println("addAccountWithIPv6: account already exists")
+		logrus.Println("addAccountWithIPv6: account already exists")
 		return
 	}
 

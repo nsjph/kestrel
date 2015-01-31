@@ -2,7 +2,8 @@ package main
 
 import (
 	"github.com/nsjph/tun"
-	"github.com/op/go-logging"
+	_ "github.com/op/go-logging"
+	"github.com/sirupsen/logrus"
 	"net"
 )
 
@@ -27,7 +28,7 @@ type CryptoAuth_Auth struct {
 	//accounts []*Account
 	accounts map[[32]byte]*Account // key is the hashed version of the password
 	keyPair  *KeyPair
-	log      *logging.Logger // go-logging
+	log      *logrus.Logger // go-logging
 }
 
 type PeerInfo struct {
@@ -53,12 +54,13 @@ type ServerConfig struct {
 }
 
 type UDPServer struct {
-	conn     *net.UDPConn
-	keyPair  *KeyPair
-	config   *ServerConfig
-	bufsz    int
-	padsz    int
-	log      *logging.Logger // go-logging
+	conn    *net.UDPConn
+	keyPair *KeyPair
+	config  *ServerConfig
+	bufsz   int
+	padsz   int
+	log     *logrus.Logger
+	//log      *logging.Logger // go-logging
 	peers    map[string]*Peer
 	accounts []*Account
 	auth     *CryptoAuth_Auth
@@ -103,9 +105,11 @@ type Peer struct {
 	nextNonce     uint32
 	tempKeyPair   *KeyPair // This is our tempKeyPair, not actually the peers
 	sharedSecret  [32]byte
+	passwordHash  [32]byte
 	publicKey     [32]byte // the remote peer's permanent public key
 	tempPublicKey [32]byte // This is the remote peer's temporary public key
-	log           *logging.Logger
+	//log           *logging.Logger
+	log *logrus.Logger
 	//passwordHash    [32]byte
 	initiator        bool
 	established      bool

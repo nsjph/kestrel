@@ -115,7 +115,7 @@ func getAuthChallengeDerivations(derivationsAsBytes []byte) uint16 {
 
 	derivations := binary.LittleEndian.Uint16(derivationsAsBytes)
 
-	spew.Dump(derivations)
+	//spew.Dump(derivations)
 
 	derivations &= ^uint16(0) >> 1
 	spew.Dump(derivations)

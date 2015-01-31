@@ -12,7 +12,7 @@ type CryptoAuthChallenge struct {
 }
 
 type CryptoAuthHandshake struct {
-	Stage uint32
+	Stage uint32 // 4 bytes
 	//	Challenge *CryptoAuthChallenge // We use a generic container initially then decode it into appropriate struct later
 	Challenge []byte // 12 bytes
 	Nonce     []byte // 24 bytes

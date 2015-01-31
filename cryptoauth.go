@@ -10,8 +10,10 @@ import (
 	"encoding/binary"
 	_ "encoding/hex"
 	_ "errors"
-	"github.com/davecgh/go-spew/spew"
+	_ "fmt"
+	_ "github.com/davecgh/go-spew/spew"
 	"github.com/op/go-logging"
+	_ "github.com/sirupsen/logrus"
 	_ "golang.org/x/crypto/curve25519"
 	_ "golang.org/x/crypto/nacl/box"
 	_ "log"
@@ -92,6 +94,8 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) error {
 				panic("nextNonce is 1")
 			case 2:
 				return peer.sendMessage([]byte{}, auth)
+			default:
+				peer.log.Debugf("receiveMessage: no issue decrypting handshake, but what do I do with nonce %d", peer.nextNonce)
 			}
 		default:
 			peer.log.Debug("receiveMessage: decrypting handshake error: %s: %s", err.Message, err.Details)
@@ -201,7 +205,7 @@ func (peer *Peer) resetSession() {
 func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsError {
 
 	if len(data) < 20 {
-		peer.log.Notice("decryptHandshake: short packet received from %s", peer.name)
+		peer.log.Info("decryptHandshake: short packet received from %s", peer.name)
 		return nil
 	}
 
@@ -218,7 +222,7 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 
 	if isEmpty(peer.publicKey) == false {
 		if peer.publicKey != handshake.PublicKey {
-			peer.log.Notice("decryptHandshake: dropping packet with different public key to existing session")
+			peer.log.Info("decryptHandshake: dropping packet with different public key to existing session")
 		}
 	} // TODO: add state check for ip6 match
 
@@ -244,14 +248,16 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 
 	if peer.requireAuth && isEmpty(account.secret) {
 		//spew.Dump(account)
-		peer.log.Notice("decryptHandshake: Dropping packet because no matching password found")
+		peer.log.Info("decryptHandshake: Dropping packet because no matching password found")
 		return errAuthentication
 	}
 
 	if isEmpty(account.secret) && handshake.Challenge.Type != 0 {
-		peer.log.Notice("decryptHandshake: Dropping packet with unrecognized auth")
+		peer.log.Info("decryptHandshake: Dropping packet with unrecognized auth")
 		return newError(ERROR_AUTHENTICATION, "decryptHandshake: Dropping packet with unrecognized auth")
 	}
+
+	peer.passwordHash = account.secret
 
 	var nextNonce uint32 = handshake.Stage
 
@@ -265,7 +271,7 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 		if isEmpty(peer.publicKey) || peer.nextNonce == 0 {
 			peer.publicKey = handshake.PublicKey
 		} else if peer.publicKey != handshake.PublicKey {
-			peer.log.Notice("decryptHandshake: Dropping packet with wrong permanent public key")
+			peer.log.Info("decryptHandshake: Dropping packet with wrong permanent public key")
 			return nil
 		}
 
@@ -298,17 +304,19 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 	payload := data[72:] // 72 is where the encrypted portion begins
 	var herTempPublicKey [32]byte
 
+	// This is more than just the handshake
 	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, payload, peer.sharedSecret)
+	decryptedTempPublicKey := decryptedHandshake[88:120]
 	if success == false {
-		peer.log.Notice("decryptHandshake: Dropping message, decryption failed")
+		peer.log.Info("decryptHandshake: Dropping message, decryption failed")
 		peer.established = false
 		return nil
 	} else {
-		peer.log.Debug("decryptHandshake: decryption of temp public key succeeeded, len: [%d]", len(decryptedHandshake))
+		peer.log.Debugf("decryptHandshake: temp public [%x]", decryptedTempPublicKey)
 		// TODO: need an assert to validate that we only got 32 bytes back from decrypting the handshake
 
 		// TODO: this copy step is probably unecessary
-		copy(herTempPublicKey[:], decryptedHandshake[:32])
+		copy(herTempPublicKey[:], decryptedTempPublicKey)
 		//peer.tempPublicKey = herTempPublicKey
 	}
 
@@ -407,7 +415,9 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 func (peer *Peer) encryptHandshake(msg []byte, isSetup int, auth *CryptoAuth_Auth) ([]byte, *cjdnsError) {
 	h := new(CryptoAuth_Handshake)
 	h.Challenge = new(CryptoAuth_Challenge)
-	var passwordHash [32]byte
+	//var passwordHash [32]byte
+
+	peer.log.Debugf("encryptHandshake: stage is %d", peer.nextNonce)
 
 	nonce := make([]byte, 24)
 	rand.Read(nonce)
@@ -433,17 +443,30 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int, auth *CryptoAuth_Aut
 	//peer.tempKeyPair = createTempKeyPair()
 
 	if peer.nextNonce == 0 || peer.nextNonce == 2 {
-		peer.tempKeyPair = createTempKeyPair()
+		if peer.tempKeyPair == nil {
+			peer.log.Debug("you dont have a temp key pair")
+			peer.tempKeyPair = createTempKeyPair()
+		}
+		//peer.tempKeyPair = createTempKeyPair()
 		//h.tempPublicKey = peer.tempKeyPair.publicKey
 	}
 
 	if peer.nextNonce < 2 {
-		computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, passwordHash)
+		peer.log.Debug("encryptHandshake: generating shared secret with peer publicKey for hello packet")
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, peer.passwordHash)
 		peer.initiator = true
 		peer.nextNonce = 1
 	} else {
-		computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, passwordHash)
+		peer.log.Debug("encryptHandshake: generating shared secret with peer tempPublicKey for key packet")
+		//peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, peer.passwordHash)
+
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.tempPublicKey, peer.passwordHash)
 		peer.nextNonce = 3
+	}
+
+	// Key Packet
+	if peer.nextNonce == 2 {
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.tempPublicKey, peer.passwordHash)
 	}
 
 	authenticatorAndEncryptedTempPubKey := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret)
@@ -458,9 +481,16 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int, auth *CryptoAuth_Aut
 	binary.Write(buf, binary.BigEndian, h.PublicKey)
 	binary.Write(buf, binary.BigEndian, authenticatorAndEncryptedTempPubKey)
 
-	logger.Info("Encrypting handshake with:\n nonce: %x\n secret: %x\n cipher: %x\n", h.Nonce, peer.sharedSecret, authenticatorAndEncryptedTempPubKey)
+	peer.log.Debugf("Encrypting handshake with:\n\tnonce [%x]\n\tsecret [%x]\n\tcipher [%x]\n",
+		h.Nonce, peer.sharedSecret, authenticatorAndEncryptedTempPubKey)
 
-	spew.Dump(buf.Bytes())
+	// peer.log.WithFields(log.Fields{
+	// 	"nonce":  fmt.Sprintf("%x", h.Nonce),
+	// 	"secret": fmt.Sprintf("%x", peer.sharedSecret),
+	// 	"cipher": authenticatorAndEncryptedTempPubKey,
+	// }).Debug("Encrypting handshake")
+
+	//spew.Dump(buf.Bytes())
 
 	return buf.Bytes(), errNone
 
