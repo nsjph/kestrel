@@ -67,22 +67,30 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) error {
 				//return -1, nil, errors.New("Error_UNDELIVERABLE")
 			}
 
-			peer.log.Debug("receiveMessage: Trying to complete handshake, nonce=%u", nonce)
-			sharedSecret := computeSharedSecret(peer.tempKeyPair.privateKey, peer.publicKey)
+			peer.log.Debugf("receiveMessage: Trying to complete handshake, nonce=%u", nonce)
+			peer.log.Debugf("generating a shared secret:\n\tmyPublicKey [%x]\n\therPublicKey [%x]",
+				peer.tempKeyPair.publicKey, peer.tempPublicKey)
+			sharedSecret := computeSharedSecret(peer.tempKeyPair.privateKey, peer.tempPublicKey)
 			peer.nextNonce += 3
 
-			// return code, body of decrypted message, error message
-			ret, _, _ := peer.decryptMessage(nonce, msg, sharedSecret)
-			if ret == 0 { // success
-				peer.log.Debug("receiveMessage: Handshake completed!")
+			////
+			// decryptMessage and mark handshake complete
+			////
+
+			_, err := peer.decryptMessage(nonce, msg[4:], sharedSecret)
+			switch err.Code {
+			case ERROR_NONE:
+				peer.log.Info("Handshake completed with peer")
 				peer.sharedSecret = sharedSecret
 				peer.established = true
-
-				// do something
+				panic("handle decrypted message now")
+			default:
+				peer.log.Warningf("Decrypting message failed with error %s (%s)", err.Message, err.Details)
+				return nil
 			}
 
-			peer.log.Debug("receiveMessage: Final handshake failed")
-			return errUndeliverable.addDetails("final handshake failed")
+			// peer.log.Debug("receiveMessage: Final handshake failed")
+			// return errUndeliverable.addDetails("final handshake failed")
 
 		}
 
@@ -109,13 +117,13 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) error {
 		}
 
 	} else if nonce > 3 && nonce != math.MaxUint32 {
-		ret, _, _ := peer.decryptMessage(nonce, msg, peer.sharedSecret)
-		if ret == 0 {
-			// do something
-			panic("what do i do with a decrypted message!?")
-		} else {
-			peer.log.Debug("receiveMessage: failed to decrypt message")
-			return errUndeliverable.addDetails("failed to decrypt message")
+		_, err := peer.decryptMessage(nonce, msg, peer.sharedSecret)
+		switch err.Code {
+		case ERROR_NONE:
+			panic("what do I do with a decrypted message?")
+		default:
+			peer.log.Warningf("Failed to decrypt message: %s (%s)", err.Message, err.Details)
+			return errAuthentication
 		}
 
 	}
@@ -179,9 +187,22 @@ func (peer *Peer) encryptMessage(msg []byte) []byte {
 
 }
 
-func (peer *Peer) decryptMessage(nonce uint32, encryptedPayload []byte, sharedSecret [32]byte) (int, []byte, error) {
+func (peer *Peer) decryptMessage(nonce uint32, data []byte, sharedSecret [32]byte) ([]byte, *cjdnsError) {
+
+	peer.log.Debugf("decrypting message with:\n\tnonce: [%d]\n\tsecret: [%x]\n\tpeerSecret: [%x]",
+		nonce, sharedSecret, peer.sharedSecret)
+	decryptedMessage, success := peer.decrypt(nonce, data, sharedSecret, peer.initiator)
+
+	if success == true {
+		peer.log.Debugf("decryptMessage: successfully decrypted message")
+		return decryptedMessage, errNone
+	} else if success == false {
+		peer.log.Debugf("decryptMessage: decryption failed")
+		return nil, errAuthentication.addDetails("decryptMessage: decryption failed")
+	}
+
 	panic("i dont know how to decrypt a message")
-	return 0, nil, nil
+	return nil, errUnknown
 }
 
 func (peer *Peer) sendHandshake(packet []byte) {

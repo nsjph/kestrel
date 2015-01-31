@@ -210,26 +210,68 @@ func encrypt(nonce uint32, msg []byte, sharedSecret [32]byte, initiator bool) []
 
 }
 
-func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiator bool) [24]byte {
+func (peer *Peer) decrypt(nonce uint32, data []byte, sharedSecret [32]byte, initiator bool) ([]byte, bool) {
 
-	n := make([]byte, 8)
-	var convertedNonce [24]byte
+	//var ints = [2]uint32{0, 0}
+	aBuf := make([]byte, 24)
+	bBuf := bytes.NewBuffer(aBuf)
 
-	if initiator == false {
-		binary.LittleEndian.PutUint32(n[4:], nonce)
-	} else {
-		binary.LittleEndian.PutUint32(n[:4], nonce)
-		//n[0] = littleEndianNonce
+	cBuf := [24]byte{}
+	//var newNonce []byte
+	binary.LittleEndian.PutUint32(cBuf[4:8], nonce)
+
+	switch initiator {
+	case true:
+		//copy(aBuf[0:4], binary.LittleEndian.Uint32(data[0:4]))
+		err := binary.Write(bBuf, binary.LittleEndian, nonce)
+		checkFatal(err)
+		//binary.LittleEndian.PutUint32(nonceAsBytes, ints[0])
+		//ints[0] = binary.LittleEndian.Uint32(nonce)
+	case false:
+		//copy(cBuf[4:8], newNonce)
+		err := binary.Write(bBuf, binary.LittleEndian, uint32(0))
+		checkFatal(err)
+		err = binary.Write(bBuf, binary.LittleEndian, nonce)
+		checkFatal(err)
+		peer.log.Debugf("decrypt: nonce [%x], len [%d]", cBuf, len(bBuf.Bytes()))
+		//copy(aBuf[4:8], binary.LittleEndian.Uint32(data[0:4]))
+		//binary.LittleEndian.PutUint32(nonceAsBytes, ints[1])
+		//ints[1] = binary.LittleEndian.Uint32(nonce)
 	}
 
-	copy(convertedNonce[:], n)
+	var convertedNonce [24]byte
+	copy(convertedNonce[:], bBuf.Bytes())
+
+	msg, success := decryptRandomNonce(cBuf, data, sharedSecret)
 
 	//buf := new(bytes.Buffer)
-	//binary.Write(buf, binary.BigEndian, n)
+	//err := binary.Write(buf, binary.BigEndian, ints[0])
 
-	//spew.Printf("decrypt(): convertedNonce = %v", convertedNonce)
+	// var buf [24]byte
+	// buf[0:4] = binary.BigEndian.Uint32()
 
-	return convertedNonce
+	//decryptRandomNonce()
+
+	return msg, success
+
+	// n := make([]byte, 8)
+	// var convertedNonce [24]byte
+
+	// if initiator == false {
+	// 	binary.LittleEndian.PutUint32(n[4:], nonce)
+	// } else {
+	// 	binary.LittleEndian.PutUint32(n[:4], nonce)
+	// 	//n[0] = littleEndianNonce
+	// }
+
+	// copy(convertedNonce[:], n)
+
+	// //buf := new(bytes.Buffer)
+	// //binary.Write(buf, binary.BigEndian, n)
+
+	// //spew.Printf("decrypt(): convertedNonce = %v", convertedNonce)
+
+	// return convertedNonce
 
 }
 
