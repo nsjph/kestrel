@@ -57,6 +57,8 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) error {
 	nonce := binary.BigEndian.Uint32(msg[:4])
 	//peer.log.Debug("receiveMessage: littleEndian nonce is [%v], bigEndian nonce is [%v]", binary.LittleEndian.Uint32(msg[:4]), nonce)
 
+	peer.log.Debugf("receiveMessage:\n\tnonce = [%d]\n\tpeer.nextNonce = [%d]", nonce, peer.nextNonce)
+
 	if peer.established == false {
 		if nonce > 3 && nonce != math.MaxUint32 {
 			if peer.nextNonce < 3 {
@@ -94,6 +96,9 @@ func (peer *Peer) receiveMessage(msg []byte, auth *CryptoAuth_Auth) error {
 				panic("nextNonce is 1")
 			case 2:
 				return peer.sendMessage([]byte{}, auth)
+			case 3:
+				return peer.sendMessage([]byte{}, auth)
+				//panic("help me handle a key packet (3)")
 			default:
 				peer.log.Debugf("receiveMessage: no issue decrypting handshake, but what do I do with nonce %d", peer.nextNonce)
 			}
@@ -272,7 +277,7 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 			peer.publicKey = handshake.PublicKey
 		} else if peer.publicKey != handshake.PublicKey {
 			peer.log.Info("decryptHandshake: Dropping packet with wrong permanent public key")
-			return nil
+			return errAuthentication.addDetails("Dropping packet with wrong permanent public key")
 		}
 
 		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, account.secret)
@@ -287,12 +292,14 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 			peer.log.Debug("decryptHandshake: received a packet of unknown type. nonce = [%u]", nonce)
 		}
 
-		if peer.initiator == true {
+		if peer.initiator == false {
 			peer.log.Warning("decryptHandshake: Dropping a stray key packet")
-			return nil
+			return errAuthentication.addDetails("Dropping a stray key packet")
 		}
 
-		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, account.secret)
+		peer.log.Debugf("Generating a key message for stage 4 of handshake")
+
+		peer.sharedSecret = computeSharedSecretWithPasswordHash(peer.tempKeyPair.privateKey, peer.publicKey, account.secret)
 		nextNonce = 4
 
 	}
@@ -306,17 +313,20 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 
 	// This is more than just the handshake
 	decryptedHandshake, success := decryptRandomNonce(handshake.Nonce, payload, peer.sharedSecret)
-	decryptedTempPublicKey := decryptedHandshake[88:120]
+	//copy(herTempPublicKey[:], decryptedHandshake[88:120])
+	//decryptedTempPublicKey := decryptedHandshake[88:120]
 	if success == false {
 		peer.log.Info("decryptHandshake: Dropping message, decryption failed")
 		peer.established = false
-		return nil
+		return errAuthentication.addDetails("Dropping message, handshake decryption failed")
 	} else {
-		peer.log.Debugf("decryptHandshake: temp public [%x]", decryptedTempPublicKey)
+
+		copy(herTempPublicKey[:], decryptedHandshake[88:120])
+		peer.log.Debugf("decryptHandshake: temp public [%x]", herTempPublicKey)
 		// TODO: need an assert to validate that we only got 32 bytes back from decrypting the handshake
 
 		// TODO: this copy step is probably unecessary
-		copy(herTempPublicKey[:], decryptedTempPublicKey)
+		//copy(herTempPublicKey[:], decryptedTempPublicKey)
 		//peer.tempPublicKey = herTempPublicKey
 	}
 
@@ -327,18 +337,18 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 	if nonce == 0 {
 		if peer.tempPublicKey == herTempPublicKey {
 			peer.log.Warning("decryptHandshake: Dropping dupe hello packet with same temporary key")
-			return nil
+			return errAuthentication.addDetails("Dropping dupe hello packet with same temp key")
 		}
 	} else if nonce == 2 && peer.nextNonce >= 4 {
 		if peer.tempPublicKey == herTempPublicKey {
 			peer.log.Warning("decryptHandshake: Dropping dupe key packet with same temporary public key")
-			return nil
+			return errAuthentication.addDetails("Dropping dupe key packet with same temp public key")
 		}
 
 	} else if nonce == 3 && peer.nextNonce >= 4 {
 		if peer.tempPublicKey != herTempPublicKey {
 			peer.log.Debug("decryptHandshake: Dropping repeat key packet with different temporary public key")
-			return nil
+			return errAuthentication.addDetails("Dropping repeat key packet with different temporary public key")
 		}
 
 	}
@@ -389,9 +399,14 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 		peer.log.Debug("decryptHandshake: Incoming hello from node with lower key, resetting")
 		peer.resetSession()
 		peer.nextNonce = nextNonce
+		peer.tempPublicKey = herTempPublicKey
 	} else {
 		// Since the peer has a higher public key, we don't reset our session. They should
 		peer.log.Debug("decryptHandshake: Incoming hello from node with higher key, not resetting")
+	}
+
+	if isEmpty(handshake.PublicKey) == false && handshake.PublicKey != peer.publicKey {
+		peer.publicKey = handshake.PublicKey
 	}
 
 	// TODO: Skipped condition where handshake was initiated in reverse and we have buffered messages -- FIXME
@@ -399,13 +414,18 @@ func (peer *Peer) decryptHandshake(data []byte, auth *CryptoAuth_Auth) *cjdnsErr
 	// TODO: Test this condition
 	if len(data) == CryptoHeader_MAXLEN {
 		if handshake.Challenge.isSetupPacket() == 1 {
-			return nil
+			return errNone
 		}
 	}
+
+	peer.replayProtector = new(ReplayProtector)
 
 	//passwordHash := peer.tryAuth(handshake, auth)
 
 	//spew.Dump(peer)
+
+	peer.log.Debugf("decryptHandshake: reached end, \n\tnonce = [%d]\n\tnextNonce = [%d]\n\tpeer.nextNonce = [%d]", nonce, nextNonce, peer.nextNonce)
+
 	return errNone
 
 	panic("i dont know what to do now!")
@@ -457,10 +477,11 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int, auth *CryptoAuth_Aut
 		peer.initiator = true
 		peer.nextNonce = 1
 	} else {
-		peer.log.Debug("encryptHandshake: generating shared secret with peer tempPublicKey for key packet")
+		peer.log.Debugf("encryptHandshake: generating shared secret with peer tempPublicKey and pw hash for key packet [%x]", peer.passwordHash)
 		//peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.publicKey, peer.passwordHash)
 
-		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.tempPublicKey, peer.passwordHash)
+		//peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.tempPublicKey, peer.passwordHash)
+		peer.sharedSecret = computeSharedSecret(auth.keyPair.privateKey, peer.tempPublicKey)
 		peer.nextNonce = 3
 	}
 
@@ -469,6 +490,7 @@ func (peer *Peer) encryptHandshake(msg []byte, isSetup int, auth *CryptoAuth_Aut
 		peer.sharedSecret = computeSharedSecretWithPasswordHash(auth.keyPair.privateKey, peer.tempPublicKey, peer.passwordHash)
 	}
 
+	// TODO: I dont think I'm doing this entirely right... Investigate
 	authenticatorAndEncryptedTempPubKey := encryptRandomNonce(h.Nonce, peer.tempKeyPair.publicKey[:], peer.sharedSecret)
 
 	buf := new(bytes.Buffer)

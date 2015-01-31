@@ -7,7 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"github.com/davecgh/go-spew/spew"
+	_ "github.com/davecgh/go-spew/spew"
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 	"log"
@@ -118,7 +118,7 @@ func getAuthChallengeDerivations(derivationsAsBytes []byte) uint16 {
 	//spew.Dump(derivations)
 
 	derivations &= ^uint16(0) >> 1
-	spew.Dump(derivations)
+	//spew.Dump(derivations)
 	return derivations
 }
 
@@ -173,7 +173,7 @@ func decryptRandomNonce(nonce [24]byte, msg []byte, sharedSecret [32]byte) ([]by
 	//var out []byte
 
 	decrypted, success := box.OpenAfterPrecomputation(msg, msg, &nonce, &sharedSecret)
-	spew.Dump(success)
+	//spew.Dump(success)
 	//spew.Dump(msg)
 
 	return decrypted, success
@@ -202,7 +202,7 @@ func encrypt(nonce uint32, msg []byte, sharedSecret [32]byte, initiator bool) []
 	//buf := new(bytes.Buffer)
 	//binary.Write(buf, binary.BigEndian, n)
 
-	spew.Printf("encrypt(): convertedNonce = %v", convertedNonce)
+	//spew.Printf("encrypt(): convertedNonce = %v", convertedNonce)
 
 	return encryptRandomNonce(convertedNonce, msg, sharedSecret)
 
@@ -227,7 +227,7 @@ func decrypt(nonce uint32, encryptedData []byte, sharedSecret [32]byte, initiato
 	//buf := new(bytes.Buffer)
 	//binary.Write(buf, binary.BigEndian, n)
 
-	spew.Printf("decrypt(): convertedNonce = %v", convertedNonce)
+	//spew.Printf("decrypt(): convertedNonce = %v", convertedNonce)
 
 	return convertedNonce
 
@@ -301,7 +301,7 @@ func (peer *Peer) getPasswordHash_typeOne(derivations uint16, account *Account) 
 		//spew.Printf("getPasswordHash_typeOne(%d) -> [%x]\n", derivations, output)
 
 		myhash := sha256.Sum256(output[:])
-		spew.Printf("typeOne hash: %x\n", myhash)
+		//spew.Printf("typeOne hash: %x\n", myhash)
 		return myhash
 
 		//buf := bytes.NewReader(derivations)
