@@ -1,17 +1,14 @@
 package main
 
 import (
-	"github.com/nsjph/tun"
-	_ "github.com/op/go-logging"
 	"github.com/sirupsen/logrus"
 	"net"
 )
 
 type ServerInfo struct {
 	//Conn      *net.UDPConn
-	Server    *UDPServer
-	TunDevice *tun.Tun
-	Peers     []PeerInfo
+	Server *UDPServer
+	Peers  []PeerInfo
 }
 
 type Account struct {

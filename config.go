@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"github.com/BurntSushi/toml"
 	"github.com/codegangsta/cli"
+	"github.com/nsjph/cryptoauth"
 	"io/ioutil"
 	"net"
 	"os"
@@ -98,18 +99,20 @@ func validateConfig(config TomlConfig) {
 }
 
 // Creates a new kestrel config and prints to stdout
-func generateConfig() {
+func generateConfig() error {
 	conf := TomlConfig{}
-	keys := generateKeys()
+	keys, err := cryptoauth.NewIdentityKeys()
+	checkFatal(err)
 	conf.Server.IPv6 = keys.IPv6.String()
-	conf.Server.PublicKey = fmt.Sprintf("%s.k", base32Encode(keys.PublicKey[:])[:52])
+	conf.Server.PublicKey = fmt.Sprintf("%s.k", cryptoauth.Base32Encode(keys.PublicKey[:])[:52])
 	conf.Server.PrivateKey = hex.EncodeToString(keys.PrivateKey[:])
 	conf.Server.Listen = generateListenAddress()
 	conf.Server.Device = "tun1"
 	buf := new(bytes.Buffer)
-	err := toml.NewEncoder(buf).Encode(conf)
-	check(err)
+	err = toml.NewEncoder(buf).Encode(conf)
+	checkFatal(err)
 	fmt.Println(buf.String())
+	return nil
 }
 
 // Creates a local UDP IPv4 address host:port combination for kestrel to use

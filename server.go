@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/hex"
+	"github.com/nsjph/cryptoauth"
 	"log"
 	"os"
 )
@@ -22,7 +23,7 @@ func (c *ServerConfig) getServerKeyPair() *KeyPair {
 
 	kp := &KeyPair{}
 
-	pubkey, err := base32Decode([]byte(c.PublicKey[:52]))
+	pubkey, err := cryptoauth.Base32Decode([]byte(c.PublicKey[:52]))
 	check(err)
 	copy(kp.publicKey[:], pubkey[:32])
 
